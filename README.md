@@ -4,11 +4,12 @@ This application reads a target EverQuest log file for configured messages and t
 
 ## Example
 
-Configuration:
+Default `config.json`:
 ```json
-// messages.json
 {
-  "Charm has worn off": "charm worn off",
+  "Charm spell has worn off": "charm wore off",
+  "Root spell has worn off": "root wore off",
+  "Fetter spell has worn off": "fetter wore off"
 }
 ```
 
@@ -141,3 +142,5 @@ The ~/.wine/dosdevices/pipe/ directory in Wine is used to implement Windows name
 In Windows, named pipes are a common method for inter-process communication (IPC). The pipe/ directory serves as the location where Wine creates the corresponding Unix domain sockets or named pipes that the Windows programs, running under Wine, can interact with.
 When a Windows application running in Wine attempts to open or create a named pipe (e.g., \\.\pipe\MyPipe), Wine translates this request, and a corresponding communication channel is managed through files within the ~/.wine/dosdevices/pipe/ directory in the Linux environment. This allows different Windows processes within the same Wine prefix, or even Linux processes (with careful implementation), to communicate with each other.
 In summary, the pipe/ directory is crucial for applications that rely on Windows named pipes for their internal operations or for communicating with other processes.
+
+Example of wine APPS using pipes to talk to each other: https://gist.github.com/coderofsalvation/3053260
