@@ -1,8 +1,8 @@
 {
-  "log_file_path": "./eq_log_your_character.log",
+  "log_file_path": "../eqlog_Ardivoli_pq.proj.txt",
   "message_announcements": {
-    "Charm spell has worn off": "charm wore off",
-    "Root spell has worn off": "root wore off",
-    "Fetter spell has worn off": "fetter wore off"
+    "charm spell has worn off": "charm break",
+    "Root spell has worn off": "root break",
+    "Fetter spell has worn off": "fetter break"
   }
 }

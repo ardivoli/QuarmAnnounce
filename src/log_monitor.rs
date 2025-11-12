@@ -64,7 +64,7 @@ impl LogMonitor {
             if bytes_read == 0 {
                 // EOF reached - wait briefly and retry
                 // println!("EOF reached - waiting 1 second and retrying...");
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                 continue;
             }
 
