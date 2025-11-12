@@ -7,9 +7,12 @@ This application reads a target EverQuest log file for configured messages and t
 Default `config.json`:
 ```json
 {
-  "Charm spell has worn off": "charm wore off",
-  "Root spell has worn off": "root wore off",
-  "Fetter spell has worn off": "fetter wore off"
+  "log_file_path": "../eq_log_yourcharacter.log",
+  "message_announcements": {
+    "Charm spell has worn off": "charm wore off",
+    "Root spell has worn off": "root wore off",
+    "Fetter spell has worn off": "fetter wore off"
+  }
 }
 ```
 

@@ -3,27 +3,30 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 
 mod audio;
+mod log_monitor;
+
 use audio::{TtsEngine, CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS};
+use log_monitor::LogMonitor;
 
 // Message configuration constant
 static MESSAGE_CONFIG_PATH: &str = "./config.json";
 
 // Configuration types
-#[derive(serde::Deserialize, Debug)]
-struct MessageConfig {
-    #[serde(flatten)]
-    mappings: HashMap<String, String>,
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct Config {
+    pub log_file_path: String,
+    pub message_announcements: HashMap<String, String>,
 }
 
 // Config loading
 
-/// Loads message mappings from config.json file
-async fn load_message_config(path: &str) -> Result<MessageConfig> {
+/// Loads configuration from config.json file
+async fn load_config(path: &str) -> Result<Config> {
     let contents = tokio::fs::read_to_string(path)
         .await
         .context(format!("Failed to read config file: {}", path))?;
 
-    let config: MessageConfig =
+    let config: Config =
         serde_json::from_str(&contents).context("Failed to parse config JSON")?;
 
     Ok(config)
@@ -33,6 +36,15 @@ async fn load_message_config(path: &str) -> Result<MessageConfig> {
 async fn main() -> Result<()> {
     println!("Starting quarm_announce...");
 
+    // Load configuration
+    let config = load_config(MESSAGE_CONFIG_PATH)
+        .await
+        .context("Failed to load configuration")?;
+
+    println!("Configuration loaded successfully");
+    println!("Log file: {}", config.log_file_path);
+    println!("Monitoring {} message patterns", config.message_announcements.len());
+
     // Initialize TTS engine
     let tts_engine = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS)
         .await
@@ -40,28 +52,12 @@ async fn main() -> Result<()> {
 
     println!("TTS engine initialized successfully");
 
-    // Demo: Spawn concurrent announcements
-    let test_messages = ["Charm break", "Root break", "Fetter break"];
-    let mut handles = vec![];
-
-    for message in test_messages {
-        let engine = tts_engine.clone();
-        let handle = tokio::spawn(async move {
-            println!("Announcing: {}", message);
-            engine.announce(message).await
-        });
-        handles.push(handle);
-    }
-
-    // Wait for all announcements to complete
-    for (i, handle) in handles.into_iter().enumerate() {
-        handle
-            .await
-            .context(format!("Failed to join task {}", i))?
-            .context(format!("Announcement {} failed", i))?;
-    }
-
-    println!("All announcements completed successfully!");
+    // Create and start log monitor
+    let monitor = LogMonitor::new(config, tts_engine);
+    monitor
+        .start_monitoring()
+        .await
+        .context("Log monitoring failed")?;
 
     Ok(())
 }

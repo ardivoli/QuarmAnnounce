@@ -1,5 +1,8 @@
 {
-  "Charm spell has worn off": "charm wore off",
-  "Root spell has worn off": "root wore off",
-  "Fetter spell has worn off": "fetter wore off"
+  "log_file_path": "./eq_log_your_character.log",
+  "message_announcements": {
+    "Charm spell has worn off": "charm wore off",
+    "Root spell has worn off": "root wore off",
+    "Fetter spell has worn off": "fetter wore off"
+  }
 }
