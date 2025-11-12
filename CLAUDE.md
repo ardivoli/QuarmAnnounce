@@ -131,11 +131,11 @@ Main Async Task (Tokio)
 ```
 
 - Synthesis tasks queue at the mutex (serialized)
-- Playback tasks run concurrently (up to 3 at once)
+- Playback tasks run concurrently (up to 1 at a time)
 - Main async task continues immediately after spawning
 
 ### Performance Considerations
 
-- **Semaphore limit**: `MAX_CONCURRENT_ANNOUNCEMENTS = 3` prevents audio overlap chaos
+- **Semaphore limit**: `MAX_CONCURRENT_ANNOUNCEMENTS = 1` prevents audio overlap chaos
 - **Memory per task**: ~200KB audio samples, max 3 concurrent = ~600KB
 - **Mutex overhead**: Minimal, only held during synthesis (~100-500ms per message)

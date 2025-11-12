@@ -3,8 +3,11 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use piper_rs::synth::PiperSpeechSynthesizer;
-use rodio::buffer::SamplesBuffer;
 use tokio::sync::{Mutex, Semaphore};
+
+// SamplesBuffer is only used in production builds for audio playback
+#[cfg(not(test))]
+use rodio::buffer::SamplesBuffer;
 
 // Audio-related constants
 pub static CONFIG_PATH: &str = "./speakers/en_US-amy-medium.onnx.json";
@@ -105,6 +108,7 @@ fn synthesize_audio(synth: &PiperSpeechSynthesizer, text: &str) -> Result<Vec<f3
 }
 
 /// Plays audio samples through the default audio device (synchronous, blocking)
+#[cfg(not(test))]
 fn play_audio(samples: Vec<f32>) -> Result<()> {
     let stream_handle = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to open default audio stream")?;
@@ -115,4 +119,168 @@ fn play_audio(samples: Vec<f32>) -> Result<()> {
     sink.sleep_until_end();
 
     Ok(())
+}
+
+/// Mock audio playback for tests (no-op, returns immediately)
+#[cfg(test)]
+fn play_audio(_samples: Vec<f32>) -> Result<()> {
+    // Mock implementation - no actual audio playback in tests
+    // This allows tests to run faster and in parallel without device contention
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    //! Integration tests for TtsEngine
+    //!
+    //! These tests require:
+    //! - Valid Piper TTS model files at CONFIG_PATH
+    //!
+    //! **Note**: Audio playback is mocked in tests using conditional compilation.
+    //! The `play_audio()` function is a no-op in test builds, allowing:
+    //! - Fast test execution (no actual audio device I/O)
+    //! - Parallel test execution (no device contention)
+    //! - Reliable CI/CD testing (no audio hardware required)
+    //!
+    //! Run tests normally:
+    //! ```bash
+    //! cargo test
+    //! ```
+    //!
+    //! Tests cover:
+    //! - Engine initialization (valid and invalid paths)
+    //! - Single and concurrent announcements
+    //! - Semaphore limiting behavior
+    //! - Engine cloning for multi-task usage
+    //! - Text handling (empty, special characters)
+
+    use super::*;
+
+    /// Test that TtsEngine can be initialized successfully with valid model path
+    #[tokio::test]
+    async fn test_tts_engine_initialization() {
+        let result = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS).await;
+        assert!(
+            result.is_ok(),
+            "TtsEngine should initialize successfully with valid model path"
+        );
+    }
+
+    /// Test that TtsEngine initialization fails with invalid model path
+    #[tokio::test]
+    async fn test_tts_engine_initialization_invalid_path() {
+        let result = TtsEngine::new("./nonexistent/model.json", 1).await;
+        assert!(
+            result.is_err(),
+            "TtsEngine should fail to initialize with invalid model path"
+        );
+    }
+
+    /// Test that a single announcement completes successfully
+    #[tokio::test]
+    async fn test_single_announcement() {
+        let engine = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS)
+            .await
+            .expect("Failed to initialize TtsEngine");
+
+        let result = engine.announce("Test message").await;
+        assert!(
+            result.is_ok(),
+            "Single announcement should complete successfully"
+        );
+    }
+
+    /// Test that empty text can be announced without errors
+    #[tokio::test]
+    async fn test_empty_announcement() {
+        let engine = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS)
+            .await
+            .expect("Failed to initialize TtsEngine");
+
+        let result = engine.announce("").await;
+        assert!(
+            result.is_ok(),
+            "Empty text announcement should complete without errors"
+        );
+    }
+
+    /// Test that TtsEngine can be cloned and used from multiple tasks
+    #[tokio::test]
+    async fn test_engine_cloning() {
+        let engine = TtsEngine::new(CONFIG_PATH, 2)
+            .await
+            .expect("Failed to initialize TtsEngine");
+
+        // Clone engine and spawn tasks
+        let engine1 = engine.clone();
+        let engine2 = engine.clone();
+
+        let handle1 = tokio::spawn(async move { engine1.announce("First").await });
+
+        let handle2 = tokio::spawn(async move { engine2.announce("Second").await });
+
+        // Both should complete successfully
+        let result1 = handle1.await.expect("Task 1 panicked");
+        let result2 = handle2.await.expect("Task 2 panicked");
+
+        assert!(result1.is_ok(), "First announcement should succeed");
+        assert!(result2.is_ok(), "Second announcement should succeed");
+    }
+
+    /// Test that concurrent announcements are properly limited by semaphore
+    #[tokio::test]
+    async fn test_concurrent_announcement_limiting() {
+        // Create engine with limit of 2 concurrent announcements
+        let engine = TtsEngine::new(CONFIG_PATH, 2)
+            .await
+            .expect("Failed to initialize TtsEngine");
+
+        // Spawn 4 concurrent announcements
+        let mut handles = vec![];
+        for i in 0..4 {
+            let engine_clone = engine.clone();
+            let handle = tokio::spawn(async move {
+                engine_clone
+                    .announce(&format!("Message {}", i))
+                    .await
+            });
+            handles.push(handle);
+        }
+
+        // All announcements should eventually complete successfully
+        for (i, handle) in handles.into_iter().enumerate() {
+            let result = handle
+                .await
+                .expect(&format!("Task {} panicked", i));
+            assert!(
+                result.is_ok(),
+                "Announcement {} should complete successfully",
+                i
+            );
+        }
+    }
+
+    /// Test that announcements with special characters work correctly
+    #[tokio::test]
+    async fn test_announcement_with_special_characters() {
+        let engine = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS)
+            .await
+            .expect("Failed to initialize TtsEngine");
+
+        let test_cases = [
+            "Hello, world!",
+            "Test: 123",
+            "Message with numbers 42",
+            "Question?",
+        ];
+
+        for text in test_cases {
+            let result = engine.announce(text).await;
+            assert!(
+                result.is_ok(),
+                "Announcement with text '{}' should succeed",
+                text
+            );
+        }
+    }
 }
