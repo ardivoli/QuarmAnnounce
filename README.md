@@ -2,7 +2,7 @@
 
 This application reads a target EverQuest log file for configured messages and then announces (via text-to-speech) a mapped, corresponding message when a new message arrives that matches the configuration.
 
-## Example
+## Example config
 
 Default `config.json`:
 ```json
@@ -17,6 +17,12 @@ Default `config.json`:
 ```
 
 Next time a charm wears off, this application will output "charm worn off" audio.
+
+## Development
+
+```console
+./scripts/download-speakers.sh
+```
 
 ## Extra notes about named pipes (for future functionality)
 
