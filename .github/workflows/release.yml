@@ -21,9 +21,32 @@ jobs:
   validate-version:
     name: Validate Version
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Placeholder
-        run: echo "Version validation placeholder"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract and validate version
+        id: version
+        run: |
+          # Extract version from git tag (e.g., v1.2.3 -> 1.2.3)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Tag version: $TAG_VERSION"
+
+          # Extract version from Cargo.toml
+          CARGO_VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[0].version')
+          echo "Cargo.toml version: $CARGO_VERSION"
+
+          # Compare versions
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Version mismatch! Git tag is v$TAG_VERSION but Cargo.toml has version $CARGO_VERSION"
+            echo "::error::Please update Cargo.toml version to $TAG_VERSION before creating this release"
+            exit 1
+          fi
+
+          echo "✓ Version validation passed: $TAG_VERSION"
+          echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
 
   build-windows:
     name: Build Windows Binary
