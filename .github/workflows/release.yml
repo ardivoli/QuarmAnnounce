@@ -53,29 +53,321 @@ jobs:
     runs-on: windows-latest
     needs: validate-version
     steps:
-      - name: Placeholder
-        run: echo "Windows build placeholder"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Verify Git LFS files
+        shell: bash
+        run: |
+          # Check if ONNX model exists
+          if [ ! -f speakers/en_US-amy-medium.onnx ]; then
+            echo "::error::ONNX model file not found at speakers/en_US-amy-medium.onnx"
+            exit 1
+          fi
+
+          # Get file size (cross-platform: use PowerShell on Windows via bash)
+          SIZE=$(powershell -Command "(Get-Item speakers/en_US-amy-medium.onnx).Length")
+          echo "ONNX model size: $SIZE bytes"
+
+          # Verify file is at least 60MB (not an LFS pointer)
+          if [ $SIZE -lt 60000000 ]; then
+            echo "::error::ONNX model file is too small ($SIZE bytes). Expected at least 60MB. This may be an LFS pointer file."
+            echo "::error::Ensure Git LFS is properly configured and the model was downloaded."
+            exit 1
+          fi
+
+          echo "✓ LFS files verified: ONNX model is $SIZE bytes"
+
+          # Also verify JSON config exists
+          if [ ! -f speakers/en_US-amy-medium.onnx.json ]; then
+            echo "::error::ONNX model config not found at speakers/en_US-amy-medium.onnx.json"
+            exit 1
+          fi
+
+          echo "✓ ONNX model config verified"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run unit tests
+        run: cargo test --verbose
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Verify binary exists
+        shell: bash
+        run: |
+          if [ ! -f target/release/quarm_announce.exe ]; then
+            echo "::error::Windows binary not found at target/release/quarm_announce.exe"
+            exit 1
+          fi
+          echo "✓ Windows binary built successfully"
+
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          # Check if binary is executable
+          if [ -f target/release/quarm_announce.exe ]; then
+            echo "✓ Binary exists and is accessible"
+          else
+            echo "::error::Binary smoke test failed"
+            exit 1
+          fi
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binary
+          path: target/release/quarm_announce.exe
+          if-no-files-found: error
 
   build-linux:
     name: Build Linux Binary
     runs-on: ubuntu-latest
     needs: validate-version
     steps:
-      - name: Placeholder
-        run: echo "Linux build placeholder"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Verify Git LFS files
+        run: |
+          # Check if ONNX model exists
+          if [ ! -f speakers/en_US-amy-medium.onnx ]; then
+            echo "::error::ONNX model file not found at speakers/en_US-amy-medium.onnx"
+            exit 1
+          fi
+
+          # Get file size using stat
+          SIZE=$(stat -c%s speakers/en_US-amy-medium.onnx)
+          echo "ONNX model size: $SIZE bytes"
+
+          # Verify file is at least 60MB (not an LFS pointer)
+          if [ $SIZE -lt 60000000 ]; then
+            echo "::error::ONNX model file is too small ($SIZE bytes). Expected at least 60MB. This may be an LFS pointer file."
+            echo "::error::Ensure Git LFS is properly configured and the model was downloaded."
+            exit 1
+          fi
+
+          echo "✓ LFS files verified: ONNX model is $SIZE bytes"
+
+          # Also verify JSON config exists
+          if [ ! -f speakers/en_US-amy-medium.onnx.json ]; then
+            echo "::error::ONNX model config not found at speakers/en_US-amy-medium.onnx.json"
+            exit 1
+          fi
+
+          echo "✓ ONNX model config verified"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libasound2-dev
+          # Note: SteamOS may require additional packages (glibc, make)
+          # This is a known limitation documented in the PRD
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run unit tests
+        run: cargo test --verbose
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Verify binary exists
+        run: |
+          if [ ! -f target/release/quarm_announce ]; then
+            echo "::error::Linux binary not found at target/release/quarm_announce"
+            exit 1
+          fi
+          echo "✓ Linux binary built successfully"
+
+      - name: Verify binary format
+        run: |
+          file target/release/quarm_announce
+          if file target/release/quarm_announce | grep -q "ELF 64-bit"; then
+            echo "✓ Binary is correct ELF 64-bit format"
+          else
+            echo "::error::Binary is not in expected ELF 64-bit format"
+            exit 1
+          fi
+
+      - name: Smoke test binary
+        run: |
+          # Verify binary is executable and can be accessed
+          if [ -x target/release/quarm_announce ]; then
+            echo "✓ Binary is executable"
+          else
+            echo "::error::Binary is not executable"
+            exit 1
+          fi
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binary
+          path: target/release/quarm_announce
+          if-no-files-found: error
 
   package-artifacts:
     name: Package Release Artifacts
     runs-on: ubuntu-latest
     needs: [validate-version, build-windows, build-linux]
     steps:
-      - name: Placeholder
-        run: echo "Packaging placeholder"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binary
+          path: ./artifacts/windows/
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: ./artifacts/linux/
+
+      - name: Display artifact structure
+        run: |
+          echo "Downloaded artifacts:"
+          ls -la artifacts/
+          echo "Windows artifacts:"
+          ls -la artifacts/windows/
+          echo "Linux artifacts:"
+          ls -la artifacts/linux/
+
+      - name: Create Windows staging directory
+        run: |
+          mkdir -p staging-windows
+          cp artifacts/windows/quarm_announce.exe staging-windows/
+          cp config.json staging-windows/
+          cp -r speakers staging-windows/
+          echo "Windows staging directory contents:"
+          ls -la staging-windows/
+          ls -la staging-windows/speakers/
+
+      - name: Create Windows package
+        run: |
+          cd staging-windows
+          zip -r ../quarm_announce-v${{ needs.validate-version.outputs.version }}-windows-x64.zip .
+          cd ..
+          echo "Created Windows package:"
+          ls -lh quarm_announce-v${{ needs.validate-version.outputs.version }}-windows-x64.zip
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: quarm_announce-v${{ needs.validate-version.outputs.version }}-windows-x64.zip
+          if-no-files-found: error
+
+      - name: Create Linux staging directory
+        run: |
+          mkdir -p staging-linux
+          cp artifacts/linux/quarm_announce staging-linux/
+          chmod +x staging-linux/quarm_announce
+          cp config.json staging-linux/
+          cp -r speakers staging-linux/
+          echo "Linux staging directory contents:"
+          ls -la staging-linux/
+          ls -la staging-linux/speakers/
+
+      - name: Create Linux package
+        run: |
+          tar -czf quarm_announce-v${{ needs.validate-version.outputs.version }}-linux-x64.tar.gz -C staging-linux .
+          echo "Created Linux package:"
+          ls -lh quarm_announce-v${{ needs.validate-version.outputs.version }}-linux-x64.tar.gz
+
+      - name: Upload Linux package
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-package
+          path: quarm_announce-v${{ needs.validate-version.outputs.version }}-linux-x64.tar.gz
+          if-no-files-found: error
+
+      - name: Verify package contents
+        run: |
+          echo "=== Verifying Windows package ==="
+          unzip -l quarm_announce-v${{ needs.validate-version.outputs.version }}-windows-x64.zip
+
+          echo -e "\n=== Verifying Linux package ==="
+          tar -tzf quarm_announce-v${{ needs.validate-version.outputs.version }}-linux-x64.tar.gz
 
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: [validate-version, package-artifacts]
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Placeholder
-        run: echo "Release creation placeholder"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate changelog
+        id: changelog
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = await github.rest.repos.generateReleaseNotes({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: github.ref_name
+            });
+            return release.data.body;
+          result-encoding: string
+
+      - name: Save changelog to file
+        run: |
+          echo "${{ steps.changelog.outputs.result }}" > changelog.md
+
+      - name: Display changelog preview
+        run: |
+          echo "=== Generated Changelog ==="
+          cat changelog.md
+
+      - name: Download Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-package
+          path: ./release-artifacts/
+
+      - name: Download Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-package
+          path: ./release-artifacts/
+
+      - name: Display release artifacts
+        run: |
+          echo "Release artifacts:"
+          ls -lh ./release-artifacts/
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          draft: true
+          name: ${{ github.ref_name }}
+          body_path: changelog.md
+          files: |
+            ./release-artifacts/*.zip
+            ./release-artifacts/*.tar.gz

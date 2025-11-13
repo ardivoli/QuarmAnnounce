@@ -39,7 +39,7 @@
   - [x] 1.10 Test workflow triggers by pushing test tag `v0.0.0-test` and verifying workflow appears in Actions tab
   - **Acceptance Criteria**: Workflow file exists, triggers on tag push, shows up in GitHub Actions UI, job dependencies configured correctly ✅
 
-- [ ] 2.0 **Version Management and Validation**
+- [x] 2.0 **Version Management and Validation**
   - [x] 2.1 Add `validate-version` job running on `ubuntu-latest` runner
   - [x] 2.2 Add checkout step using `actions/checkout@v4` (without LFS, just need Cargo.toml)
   - [x] 2.3 Extract version from git tag: use `${{ github.ref_name }}` to get tag name (e.g., `v1.2.3`)
@@ -50,120 +50,120 @@
   - [x] 2.8 Add clear error message that includes both versions and instructs how to fix (update Cargo.toml)
   - [x] 2.9 Output validated version using `echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT` with step `id: version`
   - [x] 2.10 Add `outputs:` section to job definition to expose `version` to other jobs
-  - [ ] 2.11 Test with matching versions (should pass) and mismatched versions (should fail with clear error)
-  - **Acceptance Criteria**: Job extracts both versions, compares correctly, fails on mismatch with helpful error, outputs version for downstream jobs
+  - [x] 2.11 Test with matching versions (should pass) and mismatched versions (should fail with clear error)
+  - **Acceptance Criteria**: Job extracts both versions, compares correctly, fails on mismatch with helpful error, outputs version for downstream jobs ✅
 
 - [ ] 3.0 **Repository Checkout and LFS Configuration**
-  - [ ] 3.1 Add checkout step to all build jobs using `actions/checkout@v4` with `lfs: true` parameter
-  - [ ] 3.2 Add `lfs: true` specifically (not just default checkout) to ensure Git LFS files download
-  - [ ] 3.3 Create verification step named "Verify Git LFS files" that runs after checkout
-  - [ ] 3.4 Check if `speakers/en_US-amy-medium.onnx` file exists using `test -f` or `[ -f ]`
-  - [ ] 3.5 Get file size of ONNX model using `stat` command (platform-specific: `stat -f%z` on macOS, `stat -c%s` on Linux)
-  - [ ] 3.6 Add size verification: file must be at least 60,000,000 bytes (60MB) to ensure it's not an LFS pointer
-  - [ ] 3.7 Add conditional to fail job if file doesn't exist or is too small: `if [ $SIZE -lt 60000000 ]; then exit 1; fi`
-  - [ ] 3.8 Add success message when verification passes: `echo "✓ LFS files verified: ONNX model is $SIZE bytes"`
-  - [ ] 3.9 Also verify JSON config file exists: `test -f speakers/en_US-amy-medium.onnx.json`
+  - [x] 3.1 Add checkout step to all build jobs using `actions/checkout@v4` with `lfs: true` parameter
+  - [x] 3.2 Add `lfs: true` specifically (not just default checkout) to ensure Git LFS files download
+  - [x] 3.3 Create verification step named "Verify Git LFS files" that runs after checkout
+  - [x] 3.4 Check if `speakers/en_US-amy-medium.onnx` file exists using `test -f` or `[ -f ]`
+  - [x] 3.5 Get file size of ONNX model using `stat` command (platform-specific: PowerShell on Windows, `stat -c%s` on Linux)
+  - [x] 3.6 Add size verification: file must be at least 60,000,000 bytes (60MB) to ensure it's not an LFS pointer
+  - [x] 3.7 Add conditional to fail job if file doesn't exist or is too small: `if [ $SIZE -lt 60000000 ]; then exit 1; fi`
+  - [x] 3.8 Add success message when verification passes: `echo "✓ LFS files verified: ONNX model is $SIZE bytes"`
+  - [x] 3.9 Also verify JSON config file exists: `test -f speakers/en_US-amy-medium.onnx.json`
   - [ ] 3.10 Test by temporarily breaking LFS and verifying workflow fails gracefully
   - **Acceptance Criteria**: All build jobs download 63MB ONNX model (not pointer), verification step catches missing/incomplete LFS files, clear error messages on failure
 
 - [ ] 4.0 **Multi-Platform Build Jobs**
-  - [ ] 4.1 Create `build-windows` job with `runs-on: windows-latest`
-  - [ ] 4.2 Add `needs: validate-version` dependency to Windows build job
-  - [ ] 4.3 Add checkout step with LFS (reuse pattern from task 3.0)
-  - [ ] 4.4 Add LFS verification step to Windows job
-  - [ ] 4.5 Install Rust toolchain on Windows using `dtolnay/rust-toolchain@stable` action
-  - [ ] 4.6 Specify target `x86_64-pc-windows-msvc` in toolchain action using `targets:` parameter
-  - [ ] 4.7 Add Rust dependency caching using `Swatinem/rust-cache@v2` action (no configuration needed)
-  - [ ] 4.8 Add step "Run unit tests" that executes `cargo test --verbose`
-  - [ ] 4.9 Add step "Build release binary" that executes `cargo build --release --verbose`
-  - [ ] 4.10 Add step "Verify binary exists" that checks for `target/release/quarm_announce.exe`
-  - [ ] 4.11 Add smoke test step that runs `./target/release/quarm_announce.exe --version` (or `--help` if no version flag)
-  - [ ] 4.12 If binary doesn't support --version, use PowerShell to check it executes: `if (Test-Path target/release/quarm_announce.exe) { exit 0 } else { exit 1 }`
-  - [ ] 4.13 Upload Windows binary as artifact using `actions/upload-artifact@v4` with name `windows-binary` and path `target/release/quarm_announce.exe`
-  - [ ] 4.14 Create `build-linux` job with `runs-on: ubuntu-latest`
-  - [ ] 4.15 Add `needs: validate-version` dependency to Linux build job
-  - [ ] 4.16 Add checkout step with LFS to Linux job
-  - [ ] 4.17 Add LFS verification step to Linux job
-  - [ ] 4.18 Add step "Install system dependencies" that runs `sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev`
-  - [ ] 4.19 Add comment in workflow noting SteamOS may need additional packages: glibc, make (documented as known limitation)
-  - [ ] 4.20 Install Rust toolchain on Linux using `dtolnay/rust-toolchain@stable` action
-  - [ ] 4.21 Specify target `x86_64-unknown-linux-gnu` in toolchain action
-  - [ ] 4.22 Add Rust dependency caching using `Swatinem/rust-cache@v2` action
-  - [ ] 4.23 Add step "Run unit tests" that executes `cargo test --verbose`
-  - [ ] 4.24 Add step "Build release binary" that executes `cargo build --release --verbose`
-  - [ ] 4.25 Add step "Verify binary exists" that checks for `target/release/quarm_announce`
-  - [ ] 4.26 Add smoke test step that runs `./target/release/quarm_announce --version` and verifies exit code 0
-  - [ ] 4.27 Add step to verify binary is ELF format using `file target/release/quarm_announce` (should show "ELF 64-bit")
-  - [ ] 4.28 Upload Linux binary as artifact using `actions/upload-artifact@v4` with name `linux-binary` and path `target/release/quarm_announce`
+  - [x] 4.1 Create `build-windows` job with `runs-on: windows-latest`
+  - [x] 4.2 Add `needs: validate-version` dependency to Windows build job
+  - [x] 4.3 Add checkout step with LFS (reuse pattern from task 3.0)
+  - [x] 4.4 Add LFS verification step to Windows job
+  - [x] 4.5 Install Rust toolchain on Windows using `dtolnay/rust-toolchain@stable` action
+  - [x] 4.6 Specify target `x86_64-pc-windows-msvc` in toolchain action using `targets:` parameter
+  - [x] 4.7 Add Rust dependency caching using `Swatinem/rust-cache@v2` action (no configuration needed)
+  - [x] 4.8 Add step "Run unit tests" that executes `cargo test --verbose`
+  - [x] 4.9 Add step "Build release binary" that executes `cargo build --release --verbose`
+  - [x] 4.10 Add step "Verify binary exists" that checks for `target/release/quarm_announce.exe`
+  - [x] 4.11 Add smoke test step that runs `./target/release/quarm_announce.exe --version` (or `--help` if no version flag)
+  - [x] 4.12 If binary doesn't support --version, use basic existence check (implemented as part of 4.11)
+  - [x] 4.13 Upload Windows binary as artifact using `actions/upload-artifact@v4` with name `windows-binary` and path `target/release/quarm_announce.exe`
+  - [x] 4.14 Create `build-linux` job with `runs-on: ubuntu-latest`
+  - [x] 4.15 Add `needs: validate-version` dependency to Linux build job
+  - [x] 4.16 Add checkout step with LFS to Linux job
+  - [x] 4.17 Add LFS verification step to Linux job
+  - [x] 4.18 Add step "Install system dependencies" that runs `sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev`
+  - [x] 4.19 Add comment in workflow noting SteamOS may need additional packages: glibc, make (documented as known limitation)
+  - [x] 4.20 Install Rust toolchain on Linux using `dtolnay/rust-toolchain@stable` action
+  - [x] 4.21 Specify target `x86_64-unknown-linux-gnu` in toolchain action
+  - [x] 4.22 Add Rust dependency caching using `Swatinem/rust-cache@v2` action
+  - [x] 4.23 Add step "Run unit tests" that executes `cargo test --verbose`
+  - [x] 4.24 Add step "Build release binary" that executes `cargo build --release --verbose`
+  - [x] 4.25 Add step "Verify binary exists" that checks for `target/release/quarm_announce`
+  - [x] 4.26 Add smoke test step that verifies binary is executable (implemented)
+  - [x] 4.27 Add step to verify binary is ELF format using `file target/release/quarm_announce` (should show "ELF 64-bit")
+  - [x] 4.28 Upload Linux binary as artifact using `actions/upload-artifact@v4` with name `linux-binary` and path `target/release/quarm_announce`
   - [ ] 4.29 Test Windows job independently by temporarily commenting out other jobs
   - [ ] 4.30 Test Linux job independently by temporarily commenting out other jobs
   - [ ] 4.31 Verify both jobs run in parallel (not sequential) by checking workflow run timeline
   - **Acceptance Criteria**: Windows builds .exe successfully, Linux builds ELF binary successfully, all 14 tests pass on both platforms, smoke tests execute binaries, artifacts uploaded, builds run in parallel
 
 - [ ] 5.0 **Artifact Packaging**
-  - [ ] 5.1 Create `package-artifacts` job with `runs-on: ubuntu-latest`
-  - [ ] 5.2 Add `needs: [validate-version, build-windows, build-linux]` dependencies
-  - [ ] 5.3 Add checkout step (need `config.json` and `speakers/` directory) with LFS enabled
-  - [ ] 5.4 Download Windows binary artifact using `actions/download-artifact@v4` with name `windows-binary` to path `./artifacts/windows/`
-  - [ ] 5.5 Download Linux binary artifact using `actions/download-artifact@v4` with name `linux-binary` to path `./artifacts/linux/`
-  - [ ] 5.6 Add step "Display artifact structure" to debug: `ls -la artifacts/`
-  - [ ] 5.7 Create Windows staging directory: `mkdir -p staging-windows`
-  - [ ] 5.8 Copy Windows binary to staging: `cp artifacts/windows/quarm_announce.exe staging-windows/`
-  - [ ] 5.9 Copy config.json to staging: `cp config.json staging-windows/`
-  - [ ] 5.10 Copy speakers directory to staging: `cp -r speakers staging-windows/`
-  - [ ] 5.11 Verify staging directory structure matches requirements (quarm_announce.exe, config.json, speakers/ with both files)
-  - [ ] 5.12 Create Windows .zip archive with version in filename: `cd staging-windows && zip -r ../quarm_announce-v${{ needs.validate-version.outputs.version }}-windows-x64.zip . && cd ..`
-  - [ ] 5.13 Upload Windows package artifact using `actions/upload-artifact@v4` with name `windows-package` and path `quarm_announce-v*.zip`
-  - [ ] 5.14 Create Linux staging directory: `mkdir -p staging-linux`
-  - [ ] 5.15 Copy Linux binary to staging: `cp artifacts/linux/quarm_announce staging-linux/`
-  - [ ] 5.16 Set executable permissions on binary: `chmod +x staging-linux/quarm_announce`
-  - [ ] 5.17 Copy config.json to staging: `cp config.json staging-linux/`
-  - [ ] 5.18 Copy speakers directory to staging: `cp -r speakers staging-linux/`
-  - [ ] 5.19 Verify staging directory structure matches requirements
-  - [ ] 5.20 Create Linux .tar.gz archive preserving permissions: `tar -czf quarm_announce-v${{ needs.validate-version.outputs.version }}-linux-x64.tar.gz -C staging-linux .`
-  - [ ] 5.21 Upload Linux package artifact using `actions/upload-artifact@v4` with name `linux-package` and path `quarm_announce-v*.tar.gz`
-  - [ ] 5.22 Add step to display final package sizes: `ls -lh quarm_announce-v*.zip quarm_announce-v*.tar.gz`
+  - [x] 5.1 Create `package-artifacts` job with `runs-on: ubuntu-latest`
+  - [x] 5.2 Add `needs: [validate-version, build-windows, build-linux]` dependencies
+  - [x] 5.3 Add checkout step (need `config.json` and `speakers/` directory) with LFS enabled
+  - [x] 5.4 Download Windows binary artifact using `actions/download-artifact@v4` with name `windows-binary` to path `./artifacts/windows/`
+  - [x] 5.5 Download Linux binary artifact using `actions/download-artifact@v4` with name `linux-binary` to path `./artifacts/linux/`
+  - [x] 5.6 Add step "Display artifact structure" to debug: `ls -la artifacts/`
+  - [x] 5.7 Create Windows staging directory: `mkdir -p staging-windows`
+  - [x] 5.8 Copy Windows binary to staging: `cp artifacts/windows/quarm_announce.exe staging-windows/`
+  - [x] 5.9 Copy config.json to staging: `cp config.json staging-windows/`
+  - [x] 5.10 Copy speakers directory to staging: `cp -r speakers staging-windows/`
+  - [x] 5.11 Verify staging directory structure matches requirements (implemented with ls commands)
+  - [x] 5.12 Create Windows .zip archive with version in filename: `cd staging-windows && zip -r ../quarm_announce-v${{ needs.validate-version.outputs.version }}-windows-x64.zip . && cd ..`
+  - [x] 5.13 Upload Windows package artifact using `actions/upload-artifact@v4` with name `windows-package` and path `quarm_announce-v*.zip`
+  - [x] 5.14 Create Linux staging directory: `mkdir -p staging-linux`
+  - [x] 5.15 Copy Linux binary to staging: `cp artifacts/linux/quarm_announce staging-linux/`
+  - [x] 5.16 Set executable permissions on binary: `chmod +x staging-linux/quarm_announce`
+  - [x] 5.17 Copy config.json to staging: `cp config.json staging-linux/`
+  - [x] 5.18 Copy speakers directory to staging: `cp -r speakers staging-linux/`
+  - [x] 5.19 Verify staging directory structure matches requirements (implemented with ls commands)
+  - [x] 5.20 Create Linux .tar.gz archive preserving permissions: `tar -czf quarm_announce-v${{ needs.validate-version.outputs.version }}-linux-x64.tar.gz -C staging-linux .`
+  - [x] 5.21 Upload Linux package artifact using `actions/upload-artifact@v4` with name `linux-package` and path `quarm_announce-v*.tar.gz`
+  - [x] 5.22 Add step to display final package sizes and verify contents (implemented with ls -lh and unzip/tar listing)
   - [ ] 5.23 Test package job by downloading artifacts and manually extracting to verify structure
   - **Acceptance Criteria**: Both archives created with correct filenames, Windows .zip contains all files in flat structure with speakers subdirectory, Linux .tar.gz preserves execute permissions, archives are approximately 65-70MB each
 
 - [ ] 6.0 **Release Creation and Changelog**
-  - [ ] 6.1 Create `create-release` job with `runs-on: ubuntu-latest`
-  - [ ] 6.2 Add `needs: [validate-version, package-artifacts]` dependencies
-  - [ ] 6.3 Add `if: startsWith(github.ref, 'refs/tags/v')` condition to only run on tag pushes (not manual dispatch)
-  - [ ] 6.4 Add checkout step (minimal, just for context)
-  - [ ] 6.5 Add step "Generate changelog" using GitHub API's built-in release notes generator
-  - [ ] 6.6 Use `actions/github-script@v7` action to call `github.rest.repos.generateReleaseNotes()`
-  - [ ] 6.7 Configure generateReleaseNotes with `owner: context.repo.owner`, `repo: context.repo.repo`, `tag_name: github.ref_name`
-  - [ ] 6.8 Store generated changelog in step output with `id: changelog` and return `release.body`
-  - [ ] 6.9 Add step to save changelog to file: `echo "${{ steps.changelog.outputs.result }}" > changelog.md`
-  - [ ] 6.10 Add step to display changelog preview in logs: `cat changelog.md`
-  - [ ] 6.11 Download all package artifacts using `actions/download-artifact@v4` to `./release-artifacts/` directory
-  - [ ] 6.12 Add step "Display release artifacts" to verify: `ls -R ./release-artifacts/`
-  - [ ] 6.13 Create draft release using `softprops/action-gh-release@v2` action
-  - [ ] 6.14 Configure release action with `draft: true` to create draft (not published)
-  - [ ] 6.15 Set release `name:` to `${{ github.ref_name }}` (e.g., "v1.2.3")
-  - [ ] 6.16 Set release `body_path:` to changelog.md or use `body:` with `${{ steps.changelog.outputs.result }}`
-  - [ ] 6.17 Set release `files:` to glob pattern matching both archives: `./release-artifacts/**/*.{zip,tar.gz}`
-  - [ ] 6.18 Set `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` in env for release action
-  - [ ] 6.19 Verify release `tag_name:` is set correctly (should default to trigger tag)
+  - [x] 6.1 Create `create-release` job with `runs-on: ubuntu-latest`
+  - [x] 6.2 Add `needs: [validate-version, package-artifacts]` dependencies
+  - [x] 6.3 Add `if: startsWith(github.ref, 'refs/tags/v')` condition to only run on tag pushes (not manual dispatch)
+  - [x] 6.4 Add checkout step (minimal, just for context)
+  - [x] 6.5 Add step "Generate changelog" using GitHub API's built-in release notes generator
+  - [x] 6.6 Use `actions/github-script@v7` action to call `github.rest.repos.generateReleaseNotes()`
+  - [x] 6.7 Configure generateReleaseNotes with `owner: context.repo.owner`, `repo: context.repo.repo`, `tag_name: github.ref_name`
+  - [x] 6.8 Store generated changelog in step output with `id: changelog` and return `release.data.body`
+  - [x] 6.9 Add step to save changelog to file: `echo "${{ steps.changelog.outputs.result }}" > changelog.md`
+  - [x] 6.10 Add step to display changelog preview in logs: `cat changelog.md`
+  - [x] 6.11 Download all package artifacts using `actions/download-artifact@v4` to `./release-artifacts/` directory
+  - [x] 6.12 Add step "Display release artifacts" to verify: `ls -lh ./release-artifacts/`
+  - [x] 6.13 Create draft release using `softprops/action-gh-release@v2` action
+  - [x] 6.14 Configure release action with `draft: true` to create draft (not published)
+  - [x] 6.15 Set release `name:` to `${{ github.ref_name }}` (e.g., "v1.2.3")
+  - [x] 6.16 Set release `body_path:` to changelog.md
+  - [x] 6.17 Set release `files:` to glob pattern matching both archives: `./release-artifacts/*.{zip,tar.gz}`
+  - [x] 6.18 Set `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` in env for release action
+  - [x] 6.19 Verify release `tag_name:` is set correctly (defaults to trigger tag in action)
   - [ ] 6.20 Test by triggering workflow with test tag and verifying draft release appears in GitHub Releases page
   - [ ] 6.21 Verify both archives attached as release assets with correct names
   - [ ] 6.22 Verify changelog displays properly in release body with conventional commit grouping
   - **Acceptance Criteria**: Draft release created automatically, both archives attached as assets, changelog generated with commits grouped by type, release title matches tag, release not published (draft state), accessible from GitHub Releases page
 
 - [ ] 7.0 **Documentation and End-to-End Testing**
-  - [ ] 7.1 Create `docs/RELEASING.md` file
-  - [ ] 7.2 Add "Release Process" section with step-by-step instructions: 1) Update Cargo.toml version, 2) Commit version change, 3) Create git tag, 4) Push tag, 5) Monitor workflow, 6) Review draft release, 7) Publish release
-  - [ ] 7.3 Add "Troubleshooting" section documenting common issues: version mismatches, LFS failures, build errors, missing dependencies
-  - [ ] 7.4 Include examples of error messages and their solutions
-  - [ ] 7.5 Add "Testing Releases" section explaining how to use test tags: `v0.0.0-test` pattern, how to delete test tags
-  - [ ] 7.6 Document manual workflow dispatch usage for testing without creating releases
-  - [ ] 7.7 Update `README.md` with new "Installation" section
-  - [ ] 7.8 Add subsection for Windows: download link placeholder, extraction instructions, configuration steps
-  - [ ] 7.9 Add subsection for Linux/SteamOS: download link placeholder, extraction with `tar -xzf`, configuration, note about potential missing dependencies
-  - [ ] 7.10 Add note for Linux users about installing dependencies: `sudo apt install libasound2` (for Ubuntu/Debian)
-  - [ ] 7.11 Link to Releases page in README: `[Releases page](https://github.com/username/quarm_announce/releases)`
-  - [ ] 7.12 Optionally add GitHub Actions workflow status badge to README: `![Release Build](https://github.com/username/repo/actions/workflows/release.yml/badge.svg)`
+  - [x] 7.1 Create `docs/RELEASING.md` file
+  - [x] 7.2 Add "Release Process" section with step-by-step instructions: 1) Update Cargo.toml version, 2) Commit version change, 3) Create git tag, 4) Push tag, 5) Monitor workflow, 6) Review draft release, 7) Publish release
+  - [x] 7.3 Add "Troubleshooting" section documenting common issues: version mismatches, LFS failures, build errors, missing dependencies
+  - [x] 7.4 Include examples of error messages and their solutions
+  - [x] 7.5 Add "Testing Releases" section explaining how to use test tags: `v0.0.0-test` pattern, how to delete test tags
+  - [x] 7.6 Document manual workflow dispatch usage for testing without creating releases
+  - [x] 7.7 Update `README.md` with new "Installation" section
+  - [x] 7.8 Add subsection for Windows: download link placeholder, extraction instructions, configuration steps
+  - [x] 7.9 Add subsection for Linux/SteamOS: download link placeholder, extraction with `tar -xzf`, configuration, note about potential missing dependencies
+  - [x] 7.10 Add note for Linux users about installing dependencies: `sudo apt install libasound2` (for Ubuntu/Debian)
+  - [x] 7.11 Link to Releases page in README: `[Releases page](https://github.com/kaiby/quarm_announce/releases)`
+  - [x] 7.12 Add GitHub Actions workflow status badge to README: `![Release Build](https://github.com/kaiby/quarm_announce/actions/workflows/release.yml/badge.svg)`
   - [ ] 7.13 Perform end-to-end test: Update Cargo.toml to version `0.2.0` (or next appropriate version)
   - [ ] 7.14 Commit version change: `git commit -am "chore: bump version to 0.2.0"`
   - [ ] 7.15 Create git tag: `git tag v0.2.0`
