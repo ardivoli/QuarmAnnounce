@@ -36,11 +36,19 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
    - Format: `{"<log message>": "<spoken message>"}`
    - Async loading with `load_message_config()` function (ready to use)
 
+6. **Log Monitor (LogMonitor)**: Monitors EverQuest log files and triggers announcements
+   - Tails log file using async `BufReader` with line-by-line reading
+   - Implements batch collection with timeout to deduplicate rapid announcements
+   - Uses `HashSet<String>` to ensure only one announcement per unique message type per batch
+   - Batching timeout: 10ms (catches immediately available lines without delaying single-line announcements)
+   - Idle retry delay: 50ms (when EOF is reached)
+
 ### Current Implementation State
 
 **Code Organization:**
 - `src/audio.rs`: Audio synthesis and playback module (TtsEngine, constants)
-- `src/main.rs`: Application entry point, message config, main loop
+- `src/log_monitor.rs`: Log file monitoring with batching and deduplication (LogMonitor)
+- `src/main.rs`: Application entry point, config loading, initialization
 
 **Implemented features:**
 - ✅ Async TTS engine with Tokio runtime
@@ -48,8 +56,10 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
 - ✅ Pipelined synthesis (next announcement can synthesize while current one plays)
 - ✅ Thread-safe synthesizer access via mutex
 - ✅ Proper error handling with `anyhow::Result` and context
-- ✅ Modular code structure with separate audio module
+- ✅ Modular code structure with separate audio and log monitoring modules
 - ✅ Config loading and log monitoring (fully integrated)
+- ✅ Batch deduplication of announcements (prevents duplicate announcements in rapid succession)
+- ✅ Comprehensive unit tests with generic AsyncBufRead pattern (14 tests covering batch processing, deduplication, and audio engine)
 
 ## Development Commands
 
@@ -67,8 +77,14 @@ cargo check
 cargo build --release
 cargo run --release
 
-# Run tests (when added)
+# Run tests
 cargo test
+
+# Run tests with output
+cargo test -- --nocapture
+
+# Run specific test
+cargo test test_deduplicates_identical_messages
 ```
 
 ## Key Dependencies
@@ -96,14 +112,15 @@ The README documents a future feature to read from Zeal's Windows named pipes (`
 ```
 quarm_announce/
 ├── src/
-│   ├── main.rs          # Application entry point, message config, main loop
+│   ├── main.rs          # Application entry point, config loading, initialization
+│   ├── log_monitor.rs   # Log file monitoring with batching and deduplication
 │   └── audio.rs         # Audio synthesis and playback (TtsEngine, constants)
 ├── speakers/            # Piper ONNX models and configs
 │   └── en_US-amy-medium.onnx.json
 ├── plans/               # Implementation plans and task breakdowns
 │   └── 2025-11-07_async-audio.md
 ├── Cargo.toml          # Dependencies and metadata
-└── config.json         # Message mappings (used for future log monitoring)
+└── config.json         # Message mappings (log patterns -> announcements)
 ```
 
 ## Implementation Notes
@@ -130,9 +147,81 @@ Announcement 2:                [Synth2 (mutex)] ────> [Play2 (semaphore)
 - **Key optimization**: Semaphore acquired after synthesis completes, enabling pipelined execution
 - Next announcement can synthesize while current one plays, reducing latency for queued messages
 
+### Batching and Deduplication
+
+The log monitor implements intelligent batching to prevent announcement spam when multiple identical messages appear in rapid succession (common in EverQuest when multiple buffs/debuffs expire simultaneously).
+
+**How it works:**
+1. **First line read**: Immediately reads the first available line from the log file
+2. **Batch collection window**: After finding data, enters a 10ms timeout loop to collect all immediately available lines
+3. **Deduplication**: Uses `HashSet<String>` to track unique announcement messages
+4. **Task spawning**: After batch collection completes, spawns ONE task per unique message type
+
+**Example behavior:**
+- 5 "charm spell has worn off" lines → 1 "charm break" announcement
+- 5 "charm" + 1 "root spell has worn off" → 2 announcements (charm + root)
+
+**Timeout constants** (in `log_monitor.rs`):
+- `BATCH_READ_TIMEOUT` (10ms): Short enough to not delay single-line announcements, long enough to catch bursts
+- `IDLE_RETRY_DELAY` (50ms): Wait time when no data is available (EOF reached)
+
+**Key benefit**: Dramatically reduces audio spam during buff/debuff cascades while preserving distinct message types
+
 ### Performance Considerations
 
 - **Semaphore limit**: Hardcoded to 1 in `audio.rs:54` to prevent audio overlap
 - **Pipelining benefit**: Synthesis time (100-500ms) overlaps with previous playback, reducing wait time
 - **Memory per task**: ~200KB audio samples, max 1 concurrent playback = ~200KB active memory
 - **Mutex overhead**: Minimal, only held during synthesis (~100-500ms per message)
+
+## Testing
+
+The project has comprehensive unit tests for both audio and log monitoring components.
+
+### Testing Strategy
+
+**Generic AsyncBufRead Pattern:**
+- `process_log_lines()` and `process_one_batch()` are generic over `AsyncBufReadExt + Unpin`
+- This allows testing with in-memory data (`BufReader<&[u8]>`) instead of real files
+- Tests are fast, deterministic, and don't require file I/O
+
+**Mock TTS Engine:**
+- `TtsEngine::new_mock()` provides a test-only constructor (requires model file to exist)
+- Audio playback is mocked in test builds using `#[cfg(test)]` conditional compilation
+- Tests run silently and in parallel without audio device contention
+
+### Test Coverage
+
+**Log Monitor Tests** (`src/log_monitor.rs`):
+- ✅ Deduplication of identical messages (5 charm lines → 1 announcement)
+- ✅ Preservation of different message types (charm + root → 2 announcements)
+- ✅ Single line announcements (no batching overhead)
+- ✅ Non-matching lines (empty result set)
+- ✅ EOF handling (returns None)
+- ✅ Mixed matches and non-matches with deduplication
+- ✅ `match_message()` pattern matching logic
+
+**Audio Engine Tests** (`src/audio.rs`):
+- ✅ Engine initialization (valid and invalid model paths)
+- ✅ Single and concurrent announcements
+- ✅ Semaphore limiting behavior
+- ✅ Engine cloning for multi-task usage
+- ✅ Text handling (empty, special characters)
+
+### Running Tests
+
+```bash
+# Run all tests (14 total)
+cargo test
+
+# Run log monitor tests only
+cargo test log_monitor
+
+# Run audio tests only
+cargo test audio
+
+# Run with output to see println! statements
+cargo test -- --nocapture
+```
+
+**Note:** Tests require the Piper TTS model file to exist at `./speakers/en_US-amy-medium.onnx.json` for TtsEngine initialization tests and mock creation.

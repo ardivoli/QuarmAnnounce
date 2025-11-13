@@ -58,6 +58,31 @@ impl TtsEngine {
         })
     }
 
+    /// Creates a dummy TtsEngine for testing (no model loading required)
+    /// This is only available in test builds and won't actually synthesize audio
+    #[cfg(test)]
+    pub fn new_mock() -> Result<Self> {
+        // Create a real model for the mock (required by PiperSpeechSynthesizer)
+        // This will fail if the model file doesn't exist, but that's okay for unit tests
+        // that only test batch processing logic
+        let model = piper_rs::from_config_path(Path::new(CONFIG_PATH))
+            .context("Failed to load Piper model for mock - model file may not exist")?;
+
+        model.set_speaker(SPEAKER_ID);
+
+        let synthesizer = Arc::new(Mutex::new(
+            PiperSpeechSynthesizer::new(model)
+                .context("Failed to create PiperSpeechSynthesizer for mock")?,
+        ));
+
+        let audio_semaphore = Arc::new(Semaphore::new(1));
+
+        Ok(Self {
+            synthesizer,
+            audio_semaphore,
+        })
+    }
+
     /// Announces a message via TTS in a non-blocking way
     pub async fn announce(&self, text: &str) -> Result<()> {
         // 1. Synthesize speech (CPU-bound, must serialize due to espeak-ng thread-safety)
