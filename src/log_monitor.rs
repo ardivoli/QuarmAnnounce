@@ -47,6 +47,13 @@ impl LogMonitor {
 
         println!("Monitoring log file for new messages...");
 
+        // Process log lines in an infinite loop
+        self.process_log_lines(&mut reader).await
+    }
+
+    /// Processes log lines in an infinite loop, announcing matches
+    /// Reads lines from the provided reader and spawns announcement tasks for matches
+    async fn process_log_lines(&self, reader: &mut BufReader<tokio::fs::File>) -> Result<()> {
         let mut line = String::new();
 
         loop {

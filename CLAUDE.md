@@ -25,12 +25,12 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
 
 3. **Audio Playback (Rodio)**: Handles audio output through system default stream
    - Runs in `spawn_blocking` to avoid blocking async runtime
-   - Up to 3 concurrent playbacks allowed (controlled by semaphore)
+   - Only 1 concurrent playback allowed (controlled by semaphore)
 
 4. **TtsEngine Struct**: Coordinates synthesis and playback
    - `synthesizer`: `Arc<Mutex<PiperSpeechSynthesizer>>` for thread-safe sharing
-   - `audio_semaphore`: `Arc<Semaphore>` limits concurrent announcements
-   - `announce()`: Async method that synthesizes and plays TTS non-blocking
+   - `audio_semaphore`: `Arc<Semaphore>` limits concurrent playback (not synthesis)
+   - `announce()`: Async method that synthesizes and plays TTS with pipelined operations
 
 5. **Message Mapping**: Configuration system via `config.json`
    - Format: `{"<log message>": "<spoken message>"}`
@@ -45,18 +45,11 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
 **Implemented features:**
 - ✅ Async TTS engine with Tokio runtime
 - ✅ Non-blocking audio synthesis and playback
-- ✅ Concurrent announcement support (up to 3 simultaneous)
+- ✅ Pipelined synthesis (next announcement can synthesize while current one plays)
 - ✅ Thread-safe synthesizer access via mutex
 - ✅ Proper error handling with `anyhow::Result` and context
 - ✅ Modular code structure with separate audio module
-- ✅ Config loading infrastructure (function implemented, not yet used)
-
-**Demo**: Currently spawns 3 concurrent announcements ("Charm break", "Root break", "Fetter break")
-
-**Missing features to implement:**
-- Log file monitoring/tailing
-- Integration of config.json message mapping with log monitoring
-- Real-time log parsing and pattern matching
+- ✅ Config loading and log monitoring (fully integrated)
 
 ## Development Commands
 
@@ -118,24 +111,28 @@ quarm_announce/
 ### Async Architecture
 
 - **Synthesis serialization**: Mutex ensures only one synthesis at a time (espeak-ng thread-safety)
-- **Concurrent playback**: Up to 3 audio streams can play simultaneously (semaphore limit)
+- **Playback gating**: Semaphore (limit=1) ensures only one playback at a time to prevent audio overlap
+- **Pipelined operations**: Semaphore is acquired AFTER synthesis, allowing next announcement to synthesize during current playback
 - **Blocking operations**: Both synthesis and playback use `tokio::task::spawn_blocking`
 - **Error handling**: All errors use `anyhow::Result` with `.context()` for clear error chains
 
 ### Threading Model
 
 ```
-Main Async Task (Tokio)
-  ├─> spawn_blocking (Synthesis) ─> Mutex lock ─> Piper TTS ─> espeak-ng
-  └─> spawn_blocking (Playback)  ─> Rodio sink ─> Audio device
+Announcement 1:  [Synth1 (mutex)] ────> [Play1 (semaphore)]
+Announcement 2:                [Synth2 (mutex)] ────> [Play2 (semaphore)]
+                                    ^
+                                    └─ Starts during Play1
 ```
 
-- Synthesis tasks queue at the mutex (serialized)
-- Playback tasks run concurrently (up to 1 at a time)
-- Main async task continues immediately after spawning
+- Synthesis tasks queue at the mutex (serialized by espeak-ng thread-safety requirement)
+- Playback is gated by semaphore (limit=1) to prevent audio overlap
+- **Key optimization**: Semaphore acquired after synthesis completes, enabling pipelined execution
+- Next announcement can synthesize while current one plays, reducing latency for queued messages
 
 ### Performance Considerations
 
-- **Semaphore limit**: `MAX_CONCURRENT_ANNOUNCEMENTS = 1` prevents audio overlap chaos
-- **Memory per task**: ~200KB audio samples, max 3 concurrent = ~600KB
+- **Semaphore limit**: Hardcoded to 1 in `audio.rs:54` to prevent audio overlap
+- **Pipelining benefit**: Synthesis time (100-500ms) overlaps with previous playback, reducing wait time
+- **Memory per task**: ~200KB audio samples, max 1 concurrent playback = ~200KB active memory
 - **Mutex overhead**: Minimal, only held during synthesis (~100-500ms per message)
