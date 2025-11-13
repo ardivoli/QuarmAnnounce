@@ -12,7 +12,6 @@ use rodio::buffer::SamplesBuffer;
 // Audio-related constants
 pub static CONFIG_PATH: &str = "./speakers/en_US-amy-medium.onnx.json";
 pub static SPEAKER_ID: i64 = 4;
-pub const MAX_CONCURRENT_ANNOUNCEMENTS: usize = 1;
 
 /// TTS Engine for synthesizing and playing audio announcements
 pub struct TtsEngine {
@@ -31,7 +30,7 @@ impl Clone for TtsEngine {
 
 impl TtsEngine {
     /// Creates a new TtsEngine with async model loading
-    pub async fn new(model_path: &str, max_concurrent: usize) -> Result<Self> {
+    pub async fn new(model_path: &str) -> Result<Self> {
         // Load Piper model in blocking thread (disk I/O)
         let model_path = model_path.to_string();
         let model =
@@ -51,7 +50,7 @@ impl TtsEngine {
         ));
 
         // Create semaphore for limiting concurrent announcements
-        let audio_semaphore = Arc::new(Semaphore::new(max_concurrent));
+        let audio_semaphore = Arc::new(Semaphore::new(1));
 
         Ok(Self {
             synthesizer,
@@ -61,13 +60,6 @@ impl TtsEngine {
 
     /// Announces a message via TTS in a non-blocking way
     pub async fn announce(&self, text: &str) -> Result<()> {
-        // Acquire semaphore permit to limit concurrent announcements
-        let _permit = self
-            .audio_semaphore
-            .acquire()
-            .await
-            .context("Failed to acquire semaphore permit")?;
-
         // 1. Synthesize speech (CPU-bound, must serialize due to espeak-ng thread-safety)
         // Lock the mutex to get exclusive access to the synthesizer
         let synth = Arc::clone(&self.synthesizer);
@@ -81,7 +73,15 @@ impl TtsEngine {
         .context("Failed to spawn blocking task for synthesis")?
         .context("TTS synthesis failed")?;
 
-        // 2. Play audio (blocking rodio operations, can run concurrently)
+        // 2. Acquire semaphore permit ONLY for playback to prevent audio overlap
+        // This allows next announcement to start synthesizing while current one plays
+        let _permit = self
+            .audio_semaphore
+            .acquire()
+            .await
+            .context("Failed to acquire semaphore permit")?;
+
+        // 3. Play audio (blocking rodio operations)
         tokio::task::spawn_blocking(move || play_audio(samples))
             .await
             .context("Failed to spawn blocking task for audio playback")?
@@ -159,7 +159,7 @@ mod tests {
     /// Test that TtsEngine can be initialized successfully with valid model path
     #[tokio::test]
     async fn test_tts_engine_initialization() {
-        let result = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS).await;
+        let result = TtsEngine::new(CONFIG_PATH).await;
         assert!(
             result.is_ok(),
             "TtsEngine should initialize successfully with valid model path"
@@ -169,7 +169,7 @@ mod tests {
     /// Test that TtsEngine initialization fails with invalid model path
     #[tokio::test]
     async fn test_tts_engine_initialization_invalid_path() {
-        let result = TtsEngine::new("./nonexistent/model.json", 1).await;
+        let result = TtsEngine::new("./nonexistent/model.json").await;
         assert!(
             result.is_err(),
             "TtsEngine should fail to initialize with invalid model path"
@@ -179,7 +179,7 @@ mod tests {
     /// Test that a single announcement completes successfully
     #[tokio::test]
     async fn test_single_announcement() {
-        let engine = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS)
+        let engine = TtsEngine::new(CONFIG_PATH)
             .await
             .expect("Failed to initialize TtsEngine");
 
@@ -193,7 +193,7 @@ mod tests {
     /// Test that empty text can be announced without errors
     #[tokio::test]
     async fn test_empty_announcement() {
-        let engine = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS)
+        let engine = TtsEngine::new(CONFIG_PATH)
             .await
             .expect("Failed to initialize TtsEngine");
 
@@ -207,7 +207,7 @@ mod tests {
     /// Test that TtsEngine can be cloned and used from multiple tasks
     #[tokio::test]
     async fn test_engine_cloning() {
-        let engine = TtsEngine::new(CONFIG_PATH, 2)
+        let engine = TtsEngine::new(CONFIG_PATH)
             .await
             .expect("Failed to initialize TtsEngine");
 
@@ -231,7 +231,7 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_announcement_limiting() {
         // Create engine with limit of 2 concurrent announcements
-        let engine = TtsEngine::new(CONFIG_PATH, 2)
+        let engine = TtsEngine::new(CONFIG_PATH)
             .await
             .expect("Failed to initialize TtsEngine");
 
@@ -263,7 +263,7 @@ mod tests {
     /// Test that announcements with special characters work correctly
     #[tokio::test]
     async fn test_announcement_with_special_characters() {
-        let engine = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS)
+        let engine = TtsEngine::new(CONFIG_PATH)
             .await
             .expect("Failed to initialize TtsEngine");
 

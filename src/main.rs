@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 mod audio;
 mod log_monitor;
 
-use audio::{TtsEngine, CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS};
+use audio::{TtsEngine, CONFIG_PATH};
 use log_monitor::LogMonitor;
 
 // Message configuration constant
@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     println!("Monitoring {} message patterns", config.message_announcements.len());
 
     // Initialize TTS engine
-    let tts_engine = TtsEngine::new(CONFIG_PATH, MAX_CONCURRENT_ANNOUNCEMENTS)
+    let tts_engine = TtsEngine::new(CONFIG_PATH)
         .await
         .context("Failed to initialize TTS engine")?;
 
