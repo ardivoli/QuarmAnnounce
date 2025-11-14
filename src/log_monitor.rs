@@ -58,6 +58,36 @@ impl LogMonitor {
         self.process_log_lines(&mut reader).await
     }
 
+    /// Processes log lines in an infinite loop, announcing matches
+    /// Reads lines in batches and deduplicates announcements to avoid repeating the same message
+    async fn process_log_lines<R>(&self, reader: &mut R) -> Result<()>
+    where
+        R: AsyncBufReadExt + Unpin,
+    {
+        let mut line = String::new();
+
+        loop {
+            // Process one batch of log lines
+            match self.process_one_batch(reader, &mut line).await? {
+                None => {
+                    // EOF reached - wait briefly and retry
+                    tokio::time::sleep(IDLE_RETRY_DELAY).await;
+                }
+                Some(unique_announcements) => {
+                    // Spawn announcement tasks for all unique messages in this batch
+                    for announcement in unique_announcements {
+                        let engine = self.tts_engine.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = engine.announce(&announcement).await {
+                                eprintln!("Failed to announce message: {}", e);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     /// Processes one batch of log lines, collecting unique announcements
     ///
     /// Returns:
@@ -131,36 +161,6 @@ impl LogMonitor {
         }
 
         Ok(Some(unique_announcements))
-    }
-
-    /// Processes log lines in an infinite loop, announcing matches
-    /// Reads lines in batches and deduplicates announcements to avoid repeating the same message
-    async fn process_log_lines<R>(&self, reader: &mut R) -> Result<()>
-    where
-        R: AsyncBufReadExt + Unpin,
-    {
-        let mut line = String::new();
-
-        loop {
-            // Process one batch of log lines
-            match self.process_one_batch(reader, &mut line).await? {
-                None => {
-                    // EOF reached - wait briefly and retry
-                    tokio::time::sleep(IDLE_RETRY_DELAY).await;
-                }
-                Some(unique_announcements) => {
-                    // Spawn announcement tasks for all unique messages in this batch
-                    for announcement in unique_announcements {
-                        let engine = self.tts_engine.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = engine.announce(&announcement).await {
-                                eprintln!("Failed to announce message: {}", e);
-                            }
-                        });
-                    }
-                }
-            }
-        }
     }
 
     /// Checks if a log line matches any configured message
