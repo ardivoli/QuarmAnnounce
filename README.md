@@ -51,7 +51,7 @@ Pre-built binaries are available for Windows and Linux on the [Releases page](ht
 Default `config.json`:
 ```json
 {
-  "log_file_path": "../eq_log_yourcharacter.log",
+  "game_directory": "path/to/EverquestProjectQuarm",
   "message_announcements": {
     "Charm spell has worn off": "charm wore off",
     "Root spell has worn off": "root wore off",
