@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::io::SeekFrom;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -9,14 +9,48 @@ use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
 use crate::Config;
 use crate::audio::TtsEngine;
 
+// Prefix for log files we're interested in
+const LOG_FILE_PREFIX: &str = "eqlog_";
+
+// Interval for checking if a different log file has become most recent
+const MTIME_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+
 // Timeout for checking if more lines are immediately available when batching
 const BATCH_READ_TIMEOUT: Duration = Duration::from_millis(10);
 
 // Wait time when no data is available (EOF reached)
 const IDLE_RETRY_DELAY: Duration = Duration::from_millis(50);
 
+/// Scans the given directory for eqlog_* files and returns the most recently modified one.
+/// Returns None if no matching log files are found.
+fn find_most_recent_log(directory: &Path) -> Result<Option<PathBuf>> {
+    let entries = std::fs::read_dir(directory)
+        .context(format!("Failed to read directory: {}", directory.display()))?;
+
+    let mut most_recent: Option<(PathBuf, std::time::SystemTime)> = None;
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let file_name = entry.file_name();
+        let name_str = file_name.to_string_lossy();
+
+        if name_str.starts_with(LOG_FILE_PREFIX)
+            && let Ok(metadata) = entry.metadata()
+                && let Ok(mtime) = metadata.modified() {
+                    match &most_recent {
+                        None => most_recent = Some((entry.path(), mtime)),
+                        Some((_, prev_mtime)) if mtime > *prev_mtime => {
+                            most_recent = Some((entry.path(), mtime));
+                        }
+                        _ => {}
+                    }
+                }
+    }
+
+    Ok(most_recent.map(|(path, _)| path))
+}
+
 pub struct LogMonitor {
-    log_path: PathBuf,
+    game_directory: PathBuf,
     message_map: HashMap<String, String>,
     tts_engine: TtsEngine,
 }
@@ -25,63 +59,69 @@ impl LogMonitor {
     /// Creates a new LogMonitor from config and TTS engine
     pub fn new(config: Config, tts_engine: TtsEngine) -> Self {
         Self {
-            log_path: PathBuf::from(config.log_file_path),
+            game_directory: PathBuf::from(config.game_directory),
             message_map: config.message_announcements,
             tts_engine,
         }
     }
 
-    /// Starts monitoring the log file for configured messages
+    /// Starts monitoring log files for configured messages
+    /// Automatically tracks the most recently modified eqlog_* file
     /// This function runs forever until an error occurs or the program is terminated
     pub async fn start_monitoring(&self) -> Result<()> {
-        println!("Opening log file: {:?}", self.log_path);
-
-        // Open the log file (error if doesn't exist)
-        let file = tokio::fs::File::open(&self.log_path)
-            .await
-            .context(format!(
-                "Failed to open log file: {}",
-                self.log_path.display()
-            ))?;
-
-        let mut reader = BufReader::new(file);
-
-        // Seek to end of file to only read new lines
-        reader
-            .seek(SeekFrom::End(0))
-            .await
-            .context("Failed to seek to end of log file")?;
-
-        println!("Monitoring log file for new messages...");
-
-        // Process log lines in an infinite loop
-        self.process_log_lines(&mut reader).await
-    }
-
-    /// Processes log lines in an infinite loop, announcing matches
-    /// Reads lines in batches and deduplicates announcements to avoid repeating the same message
-    async fn process_log_lines<R>(&self, reader: &mut R) -> Result<()>
-    where
-        R: AsyncBufReadExt + Unpin,
-    {
-        let mut line = String::new();
+        println!("Scanning directory: {:?}", self.game_directory);
 
         loop {
-            // Process one batch of log lines
-            match self.process_one_batch(reader, &mut line).await? {
+            // Find the most recent log file
+            let log_path = match find_most_recent_log(&self.game_directory)? {
+                Some(path) => path,
                 None => {
-                    // EOF reached - wait briefly and retry
-                    tokio::time::sleep(IDLE_RETRY_DELAY).await;
+                    println!("No eqlog_* files found, waiting...");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
                 }
-                Some(unique_announcements) => {
-                    // Spawn announcement tasks for all unique messages in this batch
-                    for announcement in unique_announcements {
-                        let engine = self.tts_engine.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = engine.announce(&announcement).await {
-                                eprintln!("Failed to announce message: {}", e);
-                            }
-                        });
+            };
+
+            println!("Monitoring: {:?}", log_path);
+
+            // Open and seek to end
+            let file = tokio::fs::File::open(&log_path)
+                .await
+                .context(format!("Failed to open: {}", log_path.display()))?;
+            let mut reader = BufReader::new(file);
+            reader
+                .seek(SeekFrom::End(0))
+                .await
+                .context("Failed to seek to end of log file")?;
+
+            // Monitor this file until a different file becomes most recent
+            let mut last_mtime_check = std::time::Instant::now();
+            let mut line_buffer = String::new();
+
+            loop {
+                match self.process_one_batch(&mut reader, &mut line_buffer).await? {
+                    Some(unique_announcements) => {
+                        // Spawn announcement tasks for all unique messages in this batch
+                        for announcement in unique_announcements {
+                            let engine = self.tts_engine.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = engine.announce(&announcement).await {
+                                    eprintln!("Failed to announce message: {}", e);
+                                }
+                            });
+                        }
+                    }
+                    None => {
+                        // EOF reached - check if we should switch files
+                        if last_mtime_check.elapsed() >= MTIME_CHECK_INTERVAL {
+                            last_mtime_check = std::time::Instant::now();
+                            if let Some(new_path) = find_most_recent_log(&self.game_directory)?
+                                && new_path != log_path {
+                                    println!("Switching to: {:?}", new_path);
+                                    break; // Break inner loop to reopen with new file
+                                }
+                        }
+                        tokio::time::sleep(IDLE_RETRY_DELAY).await;
                     }
                 }
             }
@@ -184,7 +224,7 @@ mod tests {
     // Helper function to create a test LogMonitor with custom message mappings
     fn create_test_monitor(message_map: HashMap<String, String>) -> LogMonitor {
         LogMonitor {
-            log_path: PathBuf::from("/test/path"),
+            game_directory: PathBuf::from("/test/game"),
             message_map,
             // Create a mock TtsEngine - it won't be used in process_one_batch tests
             // but is required for struct construction
@@ -388,5 +428,17 @@ mod tests {
 
         // Should not match
         assert_eq!(monitor.match_message("Some other message"), None);
+    }
+
+    #[test]
+    fn test_find_most_recent_log_no_files() {
+        // Create a temp directory with no eqlog files
+        let temp_dir = std::env::temp_dir().join("test_no_logs");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let result = find_most_recent_log(&temp_dir).unwrap();
+        assert!(result.is_none());
+
+        std::fs::remove_dir_all(&temp_dir).ok();
     }
 }

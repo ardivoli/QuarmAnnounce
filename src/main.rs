@@ -14,7 +14,7 @@ static MESSAGE_CONFIG_PATH: &str = "./config.json";
 // Configuration types
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct Config {
-    pub log_file_path: String,
+    pub game_directory: String,
     pub message_announcements: HashMap<String, String>,
 }
 
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
         .context("Failed to load configuration")?;
 
     println!("Configuration loaded successfully");
-    println!("Log file: {}", config.log_file_path);
+    println!("Game directory: {}", config.game_directory);
     println!("Monitoring {} message patterns", config.message_announcements.len());
 
     // Initialize TTS engine

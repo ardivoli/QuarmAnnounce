@@ -65,7 +65,7 @@ Next time a charm wears off, this application will output "charm worn off" audio
 ## Development
 
 ```console
-./scripts/download-speakers.sh
+git lfs pull
 ```
 
 ## Extra notes about named pipes (for future functionality)

@@ -63,9 +63,10 @@ impl TtsEngine {
     #[cfg(test)]
     pub fn new_mock() -> Result<Self> {
         // Create a real model for the mock (required by PiperSpeechSynthesizer)
-        // This will fail if the model file doesn't exist, but that's okay for unit tests
-        // that only test batch processing logic
-        let model = piper_rs::from_config_path(Path::new(CONFIG_PATH))
+        // Use CARGO_MANIFEST_DIR for absolute path that works regardless of working directory
+        let config_path =
+            concat!(env!("CARGO_MANIFEST_DIR"), "/speakers/en_US-amy-medium.onnx.json");
+        let model = piper_rs::from_config_path(Path::new(config_path))
             .context("Failed to load Piper model for mock - model file may not exist")?;
 
         model.set_speaker(SPEAKER_ID);
@@ -276,7 +277,7 @@ mod tests {
         for (i, handle) in handles.into_iter().enumerate() {
             let result = handle
                 .await
-                .expect(&format!("Task {} panicked", i));
+                .unwrap_or_else(|_| panic!("Task {} panicked", i));
             assert!(
                 result.is_ok(),
                 "Announcement {} should complete successfully",
