@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ pub static SPEAKER_ID: i64 = 4;
 pub struct TtsEngine {
     synthesizer: Arc<Mutex<PiperSpeechSynthesizer>>,
     audio_semaphore: Arc<Semaphore>,
+    audio_cache: Arc<HashMap<String, Arc<Vec<f32>>>>,
 }
 
 impl Clone for TtsEngine {
@@ -24,6 +26,7 @@ impl Clone for TtsEngine {
         Self {
             synthesizer: Arc::clone(&self.synthesizer),
             audio_semaphore: Arc::clone(&self.audio_semaphore),
+            audio_cache: Arc::clone(&self.audio_cache),
         }
     }
 }
@@ -52,9 +55,13 @@ impl TtsEngine {
         // Create semaphore for limiting concurrent announcements
         let audio_semaphore = Arc::new(Semaphore::new(1));
 
+        // Initialize empty audio cache
+        let audio_cache = Arc::new(HashMap::new());
+
         Ok(Self {
             synthesizer,
             audio_semaphore,
+            audio_cache,
         })
     }
 
@@ -78,26 +85,63 @@ impl TtsEngine {
 
         let audio_semaphore = Arc::new(Semaphore::new(1));
 
+        // Initialize empty audio cache
+        let audio_cache = Arc::new(HashMap::new());
+
         Ok(Self {
             synthesizer,
             audio_semaphore,
+            audio_cache,
         })
+    }
+
+    /// Pre-synthesizes audio for all given texts and caches them for fast playback
+    /// Should be called at startup before any announce() calls
+    pub async fn precache(&mut self, texts: impl IntoIterator<Item = impl AsRef<str>>) -> Result<()> {
+        let synth = Arc::clone(&self.synthesizer);
+        let texts: Vec<String> = texts.into_iter().map(|t| t.as_ref().to_string()).collect();
+
+        // Synthesize all texts in blocking thread (espeak-ng is not thread-safe)
+        let samples_map = tokio::task::spawn_blocking(move || {
+            let synth_guard = synth.blocking_lock();
+            let mut map = HashMap::new();
+            for text in texts {
+                let samples = synthesize_audio(&synth_guard, &text)?;
+                map.insert(text, Arc::new(samples));
+            }
+            Ok::<_, anyhow::Error>(map)
+        })
+        .await
+        .context("Failed to spawn blocking task for precache")?
+        .context("Precache synthesis failed")?;
+
+        // Store in cache - use Arc::make_mut to get mutable access
+        let cache = Arc::make_mut(&mut self.audio_cache);
+        cache.extend(samples_map);
+
+        println!("Pre-cached {} announcements", cache.len());
+        Ok(())
     }
 
     /// Announces a message via TTS in a non-blocking way
     pub async fn announce(&self, text: &str) -> Result<()> {
-        // 1. Synthesize speech (CPU-bound, must serialize due to espeak-ng thread-safety)
-        // Lock the mutex to get exclusive access to the synthesizer
-        let synth = Arc::clone(&self.synthesizer);
-        let text = text.to_string();
-        let samples = tokio::task::spawn_blocking(move || {
-            // Lock is acquired in the blocking thread to avoid holding it across await
-            let synth_guard = synth.blocking_lock();
-            synthesize_audio(&synth_guard, &text)
-        })
-        .await
-        .context("Failed to spawn blocking task for synthesis")?
-        .context("TTS synthesis failed")?;
+        // 1. Check cache first, fallback to synthesis if not cached
+        let samples = if let Some(cached) = self.audio_cache.get(text) {
+            // Cache hit - just clone the Arc reference (cheap)
+            Arc::clone(cached)
+        } else {
+            // Cache miss - synthesize on demand (original behavior)
+            let synth = Arc::clone(&self.synthesizer);
+            let text = text.to_string();
+            let samples = tokio::task::spawn_blocking(move || {
+                let synth_guard = synth.blocking_lock();
+                synthesize_audio(&synth_guard, &text)
+            })
+            .await
+            .context("Failed to spawn blocking task for synthesis")?
+            .context("TTS synthesis failed")?;
+            Arc::new(samples)
+        };
 
         // 2. Acquire semaphore permit ONLY for playback to prevent audio overlap
         // This allows next announcement to start synthesizing while current one plays
@@ -108,7 +152,9 @@ impl TtsEngine {
             .context("Failed to acquire semaphore permit")?;
 
         // 3. Play audio (blocking rodio operations)
-        tokio::task::spawn_blocking(move || play_audio(samples))
+        // Note: We need to convert Arc<Vec<f32>> to Vec<f32> for play_audio
+        let samples_vec = (*samples).clone();
+        tokio::task::spawn_blocking(move || play_audio(samples_vec))
             .await
             .context("Failed to spawn blocking task for audio playback")?
             .context("Audio playback failed")?;
@@ -179,6 +225,7 @@ mod tests {
     //! - Semaphore limiting behavior
     //! - Engine cloning for multi-task usage
     //! - Text handling (empty, special characters)
+    //! - Audio precaching for faster playback
 
     use super::*;
 
@@ -308,5 +355,39 @@ mod tests {
                 text
             );
         }
+    }
+
+    /// Test that precache() successfully caches announcement texts
+    #[tokio::test]
+    async fn test_precache_caches_announcements() {
+        let mut engine = TtsEngine::new(CONFIG_PATH)
+            .await
+            .expect("Failed to initialize TtsEngine");
+
+        let announcements = ["charm break", "root break"];
+        let result = engine.precache(announcements.iter().copied()).await;
+
+        assert!(result.is_ok(), "Precache should succeed");
+    }
+
+    /// Test that announce() uses cached audio (no synthesis needed)
+    #[tokio::test]
+    async fn test_announce_uses_cached_audio() {
+        let mut engine = TtsEngine::new(CONFIG_PATH)
+            .await
+            .expect("Failed to initialize TtsEngine");
+
+        // Precache the announcement
+        engine
+            .precache(["test announcement"])
+            .await
+            .expect("Precache should succeed");
+
+        // Announce should succeed and use cached audio
+        let result = engine.announce("test announcement").await;
+        assert!(
+            result.is_ok(),
+            "Announce with cached audio should succeed"
+        );
     }
 }

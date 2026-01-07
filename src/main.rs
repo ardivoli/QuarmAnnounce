@@ -46,9 +46,15 @@ async fn main() -> Result<()> {
     println!("Monitoring {} message patterns", config.message_announcements.len());
 
     // Initialize TTS engine
-    let tts_engine = TtsEngine::new(CONFIG_PATH)
+    let mut tts_engine = TtsEngine::new(CONFIG_PATH)
         .await
         .context("Failed to initialize TTS engine")?;
+
+    // Pre-cache all announcement audio for faster playback
+    tts_engine
+        .precache(config.message_announcements.values())
+        .await
+        .context("Failed to pre-cache announcement audio")?;
 
     println!("TTS engine initialized successfully");
 
