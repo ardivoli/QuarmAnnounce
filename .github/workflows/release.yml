@@ -97,7 +97,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run unit tests
-        run: cargo test --verbose -- --test-threads=1
+        run: cargo test --verbose
 
       - name: Build release binary
         run: cargo build --release --verbose
