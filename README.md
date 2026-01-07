@@ -1,6 +1,6 @@
 # Quarm Announce
 
-![Release Build](https://github.com/kaiby/quarm_announce/actions/workflows/release.yml/badge.svg)
+![Release Build](https://github.com/ardivoli/QuarmAnnounce/actions/workflows/release.yml/badge.svg)
 
 This application reads a target EverQuest log file for configured messages and then announces (via text-to-speech) a mapped, corresponding message when a new message arrives that matches the configuration.
 
