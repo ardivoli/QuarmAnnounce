@@ -162,8 +162,8 @@
   - [x] 7.8 Add subsection for Windows: download link placeholder, extraction instructions, configuration steps
   - [x] 7.9 Add subsection for Linux/SteamOS: download link placeholder, extraction with `tar -xzf`, configuration, note about potential missing dependencies
   - [x] 7.10 Add note for Linux users about installing dependencies: `sudo apt install libasound2` (for Ubuntu/Debian)
-  - [x] 7.11 Link to Releases page in README: `[Releases page](https://github.com/kaiby/quarm_announce/releases)`
-  - [x] 7.12 Add GitHub Actions workflow status badge to README: `![Release Build](https://github.com/kaiby/quarm_announce/actions/workflows/release.yml/badge.svg)`
+  - [x] 7.11 Link to Releases page in README: `[Releases page](https://github.com/ardivoli/QuarmAnnounce/releases)`
+  - [x] 7.12 Add GitHub Actions workflow status badge to README: `![Release Build](https://github.com/ardivoli/QuarmAnnounce/actions/workflows/release.yml/badge.svg)`
   - [ ] 7.13 Perform end-to-end test: Update Cargo.toml to version `0.2.0` (or next appropriate version)
   - [ ] 7.14 Commit version change: `git commit -am "chore: bump version to 0.2.0"`
   - [ ] 7.15 Create git tag: `git tag v0.2.0`

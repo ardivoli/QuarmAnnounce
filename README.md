@@ -6,11 +6,11 @@ This application reads a target EverQuest log file for configured messages and t
 
 ## Installation
 
-Pre-built binaries are available for Windows and Linux on the [Releases page](https://github.com/kaiby/quarm_announce/releases).
+Pre-built binaries are available for Windows and Linux on the [Releases page](https://github.com/ardivoli/QuarmAnnounce/releases).
 
 ### Windows
 
-1. Download the latest `quarm_announce-v*-windows-x64.zip` from the [Releases page](https://github.com/kaiby/quarm_announce/releases)
+1. Download the latest `quarm_announce-v*-windows-x64.zip` from the [Releases page](https://github.com/ardivoli/QuarmAnnounce/releases)
 2. Extract the archive to a location of your choice (e.g., `C:\Program Files\quarm_announce\`)
 3. The extracted folder should contain:
    - `quarm_announce.exe` - The main application
@@ -21,7 +21,7 @@ Pre-built binaries are available for Windows and Linux on the [Releases page](ht
 
 ### Linux / SteamOS
 
-1. Download the latest `quarm_announce-v*-linux-x64.tar.gz` from the [Releases page](https://github.com/kaiby/quarm_announce/releases)
+1. Download the latest `quarm_announce-v*-linux-x64.tar.gz` from the [Releases page](https://github.com/ardivoli/QuarmAnnounce/releases)
 2. Extract the archive:
    ```bash
    tar -xzf quarm_announce-v*-linux-x64.tar.gz -C ~/quarm_announce
