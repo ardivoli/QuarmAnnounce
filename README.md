@@ -64,6 +64,10 @@ Next time a charm wears off, this application will output "charm worn off" audio
 
 ## Development
 
+1. This app is coded in Rust, so [install that](https://rust-lang.org/learn/get-started/).
+2. Git hooks are controlled by [lefthook](https://github.com/evilmartians/lefthook) (you'll also need [homebrew/linux-brew](https://brew.sh/)): `brew install lefthook`.
+3. We use [beads](https://github.com/steveyegge/beads) and [perles](https://github.com/zjrosen/perles) for AI issue tracking.
+
 ```console
 git lfs pull
 ```
@@ -197,3 +201,10 @@ When a Windows application running in Wine attempts to open or create a named pi
 In summary, the pipe/ directory is crucial for applications that rely on Windows named pipes for their internal operations or for communicating with other processes.
 
 Example of wine APPS using pipes to talk to each other: https://gist.github.com/coderofsalvation/3053260
+
+**Key notes for named pipe implementation:**
+- Windows-only IPC mechanism (Linux/Wine uses `~/.wine/dosdevices/pipe/`)
+- UTF-8 encoded JSON messages with structure: `{type, data_len, character, data}`
+- Type 0 (LogText) is the relevant message type for log monitoring
+- Named pipes are in-memory only, no disk I/O
+- Rust can connect using `std::fs::File` or Windows-specific APIs

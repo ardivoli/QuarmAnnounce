@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Agent Instructions
+
+Read AGENTS.md for VERY IMPORTANT instructions around task planning, tracking, and completion.
+
 ## Project Overview
 
 Quarm Announce is a Rust application that monitors EverQuest log files for configured messages and announces them via text-to-speech (TTS). When a matching message is detected in the log file, the application speaks a corresponding audio announcement using the Piper TTS engine.
@@ -95,17 +99,6 @@ cargo test test_deduplicates_identical_messages
 - `rodio` (0.21.1): Audio playback
 - `anyhow` (1.0): Error handling with context
 - `serde` / `serde_json` (1.0): JSON config parsing
-
-## Future Functionality: Named Pipes
-
-The README documents a future feature to read from Zeal's Windows named pipes (`\\.\pipe\zeal_{processId}`) for real-time EverQuest event streaming. This would replace log file tailing.
-
-**Key notes for named pipe implementation:**
-- Windows-only IPC mechanism (Linux/Wine uses `~/.wine/dosdevices/pipe/`)
-- UTF-8 encoded JSON messages with structure: `{type, data_len, character, data}`
-- Type 0 (LogText) is the relevant message type for log monitoring
-- Named pipes are in-memory only, no disk I/O
-- Rust can connect using `std::fs::File` or Windows-specific APIs
 
 ## Project Structure
 
