@@ -17,10 +17,10 @@ pre-push:
     lfs:
       # Git LFS needs stdin for ref info
       use_stdin: true
-      run: git lfs pre-push origin {1}
+      run: git lfs pre-push {1} {2}
     beads:
       use_stdin: true
-      run: bd hooks run pre-push
+      run: bd hooks run pre-push {1} {2}
 
 post-commit:
   commands:
