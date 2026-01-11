@@ -1,0 +1,44 @@
+# lefthook.yml
+# Manages hooks for both Git LFS and Beads
+
+pre-commit:
+  commands:
+    beads:
+      run: bd hooks run pre-commit
+
+prepare-commit-msg:
+  commands:
+    beads:
+      # Git passes: $1=msg file, $2=source, $3=SHA (optional)
+      run: bd hooks run prepare-commit-msg {1} {2} {3}
+
+pre-push:
+  commands:
+    lfs:
+      # Git LFS needs stdin for ref info
+      use_stdin: true
+      run: git lfs pre-push origin {1}
+    beads:
+      use_stdin: true
+      run: bd hooks run pre-push
+
+post-commit:
+  commands:
+    lfs:
+      run: git lfs post-commit
+
+post-checkout:
+  commands:
+    lfs:
+      # Args: $1=prev HEAD, $2=new HEAD, $3=branch flag
+      run: git lfs post-checkout {1} {2} {3}
+    beads:
+      run: bd hooks run post-checkout {1} {2} {3}
+
+post-merge:
+  commands:
+    lfs:
+      # Arg: $1=squash flag
+      run: git lfs post-merge {1}
+    beads:
+      run: bd hooks run post-merge {1}
