@@ -129,6 +129,26 @@ jobs:
           path: target/release/quarm_announce.exe
           if-no-files-found: error
 
+      - name: Locate espeak-ng-data from build
+        id: espeak-data-win
+        shell: bash
+        run: |
+          # Find the espeak-ng-data directory in the build output
+          ESPEAK_DATA_DIR=$(find target/release/build -type d -name "espeak-ng-data" -path "*/share/*" | head -1)
+          if [ -z "$ESPEAK_DATA_DIR" ]; then
+            echo "::error::Could not find espeak-ng-data in build output"
+            exit 1
+          fi
+          echo "Found espeak-ng-data at: $ESPEAK_DATA_DIR"
+          echo "espeak_data_dir=$ESPEAK_DATA_DIR" >> $GITHUB_OUTPUT
+
+      - name: Upload espeak-ng-data (Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-espeak-data
+          path: ${{ steps.espeak-data-win.outputs.espeak_data_dir }}
+          if-no-files-found: error
+
   build-linux:
     name: Build Linux Binary
     runs-on: ubuntu-latest
@@ -224,6 +244,25 @@ jobs:
           path: target/release/quarm_announce
           if-no-files-found: error
 
+      - name: Locate espeak-ng-data from build
+        id: espeak-data-linux
+        run: |
+          # Find the espeak-ng-data directory in the build output
+          ESPEAK_DATA_DIR=$(find target/release/build -type d -name "espeak-ng-data" -path "*/share/*" | head -1)
+          if [ -z "$ESPEAK_DATA_DIR" ]; then
+            echo "::error::Could not find espeak-ng-data in build output"
+            exit 1
+          fi
+          echo "Found espeak-ng-data at: $ESPEAK_DATA_DIR"
+          echo "espeak_data_dir=$ESPEAK_DATA_DIR" >> $GITHUB_OUTPUT
+
+      - name: Upload espeak-ng-data (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-espeak-data
+          path: ${{ steps.espeak-data-linux.outputs.espeak_data_dir }}
+          if-no-files-found: error
+
   package-artifacts:
     name: Package Release Artifacts
     runs-on: ubuntu-latest
@@ -246,6 +285,18 @@ jobs:
           name: linux-binary
           path: ./artifacts/linux/
 
+      - name: Download Windows espeak-ng-data
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-espeak-data
+          path: ./artifacts/windows-espeak-data/
+
+      - name: Download Linux espeak-ng-data
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-espeak-data
+          path: ./artifacts/linux-espeak-data/
+
       - name: Display artifact structure
         run: |
           echo "Downloaded artifacts:"
@@ -261,9 +312,11 @@ jobs:
           cp artifacts/windows/quarm_announce.exe staging-windows/
           cp config.json staging-windows/
           cp -r speakers staging-windows/
+          cp -r artifacts/windows-espeak-data staging-windows/espeak-ng-data
           echo "Windows staging directory contents:"
           ls -la staging-windows/
           ls -la staging-windows/speakers/
+          ls -la staging-windows/espeak-ng-data/ | head -10
 
       - name: Create Windows package
         run: |
@@ -287,9 +340,11 @@ jobs:
           chmod +x staging-linux/quarm_announce
           cp config.json staging-linux/
           cp -r speakers staging-linux/
+          cp -r artifacts/linux-espeak-data staging-linux/espeak-ng-data
           echo "Linux staging directory contents:"
           ls -la staging-linux/
           ls -la staging-linux/speakers/
+          ls -la staging-linux/espeak-ng-data/ | head -10
 
       - name: Create Linux package
         run: |
@@ -309,8 +364,22 @@ jobs:
           echo "=== Verifying Windows package ==="
           unzip -l quarm_announce-v${{ needs.validate-version.outputs.version }}-windows-x64.zip
 
+          # Verify espeak-ng-data is included
+          if ! unzip -l quarm_announce-v${{ needs.validate-version.outputs.version }}-windows-x64.zip | grep -q "espeak-ng-data/"; then
+            echo "::error::Windows package missing espeak-ng-data directory"
+            exit 1
+          fi
+          echo "✓ Windows package contains espeak-ng-data"
+
           echo -e "\n=== Verifying Linux package ==="
           tar -tzf quarm_announce-v${{ needs.validate-version.outputs.version }}-linux-x64.tar.gz
+
+          # Verify espeak-ng-data is included
+          if ! tar -tzf quarm_announce-v${{ needs.validate-version.outputs.version }}-linux-x64.tar.gz | grep -q "espeak-ng-data/"; then
+            echo "::error::Linux package missing espeak-ng-data directory"
+            exit 1
+          fi
+          echo "✓ Linux package contains espeak-ng-data"
 
   create-release:
     name: Create GitHub Release
