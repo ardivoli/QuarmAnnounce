@@ -63,7 +63,7 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
 - ✅ Modular code structure with separate audio and log monitoring modules
 - ✅ Config loading and log monitoring (fully integrated)
 - ✅ Batch deduplication of announcements (prevents duplicate announcements in rapid succession)
-- ✅ Comprehensive unit tests with generic AsyncBufRead pattern (14 tests covering batch processing, deduplication, and audio engine)
+- ✅ Comprehensive unit tests with generic AsyncBufRead pattern covering batch processing, deduplication, and audio engine
 
 ## Development Commands
 
@@ -93,12 +93,14 @@ cargo test test_deduplicates_identical_messages
 
 ## Key Dependencies
 
-- `tokio` (1.48): Async runtime with full features
-- `piper-rs` (0.1.9): Neural TTS synthesis
-- `ort` (2.0.0-rc.9): ONNX Runtime for ML inference
-- `rodio` (0.21.1): Audio playback
-- `anyhow` (1.0): Error handling with context
-- `serde` / `serde_json` (1.0): JSON config parsing
+See `Cargo.toml` for current versions. Core dependencies:
+
+- `tokio`: Async runtime with full features
+- `piper-rs`: Neural TTS synthesis
+- `ort` / `ort-sys`: ONNX Runtime for ML inference
+- `rodio`: Audio playback
+- `anyhow`: Error handling with context
+- `serde` / `serde_json`: JSON config parsing
 
 ## Project Structure
 
@@ -110,8 +112,6 @@ quarm_announce/
 │   └── audio.rs         # Audio synthesis and playback (TtsEngine, constants)
 ├── speakers/            # Piper ONNX models and configs
 │   └── en_US-amy-medium.onnx.json
-├── plans/               # Implementation plans and task breakdowns
-│   └── 2025-11-07_async-audio.md
 ├── Cargo.toml          # Dependencies and metadata
 └── config.json         # Message mappings (log patterns -> announcements)
 ```
@@ -121,8 +121,8 @@ quarm_announce/
 ### Async Architecture
 
 - **Synthesis serialization**: Mutex ensures only one synthesis at a time (espeak-ng thread-safety)
-- **Playback gating**: Semaphore (limit=1) ensures only one playback at a time to prevent audio overlap
-- **Pipelined operations**: Semaphore is acquired AFTER synthesis, allowing next announcement to synthesize during current playback
+- **Playback gating**: Semaphore (limit=1, hardcoded in `audio.rs:54`) ensures only one playback at a time to prevent audio overlap
+- **Pipelined operations**: Semaphore is acquired AFTER synthesis, allowing next announcement to synthesize during current playback (synthesis time ~100-500ms overlaps with previous playback)
 - **Blocking operations**: Both synthesis and playback use `tokio::task::spawn_blocking`
 - **Error handling**: All errors use `anyhow::Result` with `.context()` for clear error chains
 
@@ -135,37 +135,11 @@ Announcement 2:                [Synth2 (mutex)] ────> [Play2 (semaphore)
                                     └─ Starts during Play1
 ```
 
-- Synthesis tasks queue at the mutex (serialized by espeak-ng thread-safety requirement)
-- Playback is gated by semaphore (limit=1) to prevent audio overlap
-- **Key optimization**: Semaphore acquired after synthesis completes, enabling pipelined execution
-- Next announcement can synthesize while current one plays, reducing latency for queued messages
+Synthesis is serialized (mutex), playback is gated (semaphore, limit=1). Key optimization: semaphore acquired after synthesis, enabling pipelined execution.
 
 ### Batching and Deduplication
 
-The log monitor implements intelligent batching to prevent announcement spam when multiple identical messages appear in rapid succession (common in EverQuest when multiple buffs/debuffs expire simultaneously).
-
-**How it works:**
-1. **First line read**: Immediately reads the first available line from the log file
-2. **Batch collection window**: After finding data, enters a 10ms timeout loop to collect all immediately available lines
-3. **Deduplication**: Uses `HashSet<String>` to track unique announcement messages
-4. **Task spawning**: After batch collection completes, spawns ONE task per unique message type
-
-**Example behavior:**
-- 5 "charm spell has worn off" lines → 1 "charm break" announcement
-- 5 "charm" + 1 "root spell has worn off" → 2 announcements (charm + root)
-
-**Timeout constants** (in `log_monitor.rs`):
-- `BATCH_READ_TIMEOUT` (10ms): Short enough to not delay single-line announcements, long enough to catch bursts
-- `IDLE_RETRY_DELAY` (50ms): Wait time when no data is available (EOF reached)
-
-**Key benefit**: Dramatically reduces audio spam during buff/debuff cascades while preserving distinct message types
-
-### Performance Considerations
-
-- **Semaphore limit**: Hardcoded to 1 in `audio.rs:54` to prevent audio overlap
-- **Pipelining benefit**: Synthesis time (100-500ms) overlaps with previous playback, reducing wait time
-- **Memory per task**: ~200KB audio samples, max 1 concurrent playback = ~200KB active memory
-- **Mutex overhead**: Minimal, only held during synthesis (~100-500ms per message)
+The log monitor uses intelligent batching to prevent announcement spam when multiple identical messages appear rapidly (common in EverQuest when buffs/debuffs expire simultaneously). It collects lines in a 10ms window and uses a `HashSet<String>` to spawn ONE task per unique message. For example: 5 "charm spell has worn off" lines → 1 announcement, but 5 charm + 1 root → 2 distinct announcements. See `log_monitor.rs` for timeout constants.
 
 ## Testing
 
@@ -186,25 +160,15 @@ The project has comprehensive unit tests for both audio and log monitoring compo
 ### Test Coverage
 
 **Log Monitor Tests** (`src/log_monitor.rs`):
-- ✅ Deduplication of identical messages (5 charm lines → 1 announcement)
-- ✅ Preservation of different message types (charm + root → 2 announcements)
-- ✅ Single line announcements (no batching overhead)
-- ✅ Non-matching lines (empty result set)
-- ✅ EOF handling (returns None)
-- ✅ Mixed matches and non-matches with deduplication
-- ✅ `match_message()` pattern matching logic
+- Deduplication, batch processing, pattern matching, EOF handling
 
 **Audio Engine Tests** (`src/audio.rs`):
-- ✅ Engine initialization (valid and invalid model paths)
-- ✅ Single and concurrent announcements
-- ✅ Semaphore limiting behavior
-- ✅ Engine cloning for multi-task usage
-- ✅ Text handling (empty, special characters)
+- Engine initialization, concurrent announcements, semaphore behavior, text handling
 
 ### Running Tests
 
 ```bash
-# Run all tests (14 total)
+# Run all tests
 cargo test
 
 # Run log monitor tests only
