@@ -52,11 +52,34 @@ Default `config.json`:
 ```json
 {
   "game_directory": "path/to/EverquestProjectQuarm",
-  "message_announcements": {
-    "Charm spell has worn off": "charm wore off",
-    "Root spell has worn off": "root wore off",
-    "Fetter spell has worn off": "fetter wore off"
-  }
+  "messages": [
+    {
+      "type": "simple",
+      "pattern": "charm spell has worn off",
+      "announcement": "charm break"
+    },
+    {
+      "type": "simple",
+      "pattern": "Root spell has worn off",
+      "announcement": "root break"
+    },
+    {
+      "type": "simple",
+      "pattern": "YourPlayerName has fallen to the ground",
+      "announcement": "feign fail"
+    },
+    {
+      "type": "simple",
+      "pattern": "flesh begins to liquefy",
+      "announcement": "go back in"
+    },
+    {
+      "type": "timed_delay",
+      "pattern": "flesh begins to liquefy",
+      "announcement": "get out",
+      "timer_delay_in_seconds": 22
+    }
+  ]
 }
 ```
 
