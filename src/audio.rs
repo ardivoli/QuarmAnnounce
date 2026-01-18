@@ -182,8 +182,11 @@ fn synthesize_audio(synth: &PiperSpeechSynthesizer, text: &str) -> Result<Vec<f3
 /// Plays audio samples through the default audio device (synchronous, blocking)
 #[cfg(not(test))]
 fn play_audio(samples: Vec<f32>) -> Result<()> {
-    let stream_handle = rodio::OutputStreamBuilder::open_default_stream()
+    let mut stream_handle = rodio::OutputStreamBuilder::open_default_stream()
         .context("Failed to open default audio stream")?;
+    // Disable noisy log messages related output stream being dropped after audio playback is done
+    stream_handle.log_on_drop(false);
+
     let sink = rodio::Sink::connect_new(stream_handle.mixer());
 
     let buf = SamplesBuffer::new(1, 22050, samples);
