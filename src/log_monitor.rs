@@ -55,9 +55,9 @@ fn find_most_recent_log(directory: &Path) -> Result<Option<PathBuf>> {
 struct BatchResult {
     /// Immediate announcements to play now (Simple message types)
     immediate: Vec<String>,
-    /// Timed delay announcements (pattern, announcement, delay_seconds)
-    /// Pattern is used as key for debouncing
-    timed_delay: Vec<(String, String, u64)>,
+    /// Timed delay announcements: pattern -> (announcement, delay_seconds)
+    /// Pattern is used as key for batch-level deduplication
+    timed_delay: HashMap<String, (String, u64)>,
 }
 
 pub struct LogMonitor {
@@ -127,7 +127,7 @@ impl LogMonitor {
                         }
 
                         // Schedule timed delay announcements
-                        for (pattern, announcement, delay_seconds) in batch_result.timed_delay {
+                        for (pattern, (announcement, delay_seconds)) in batch_result.timed_delay {
                             // Use pattern as key for debouncing
                             self.schedule_timed_delay(pattern, announcement, delay_seconds);
                         }
@@ -179,7 +179,7 @@ impl LogMonitor {
         // We got at least one line - start batch collection
         // Use HashSet for deduplication of immediate announcements
         let mut immediate_set = HashSet::new();
-        let mut timed_delay = Vec::new();
+        let mut timed_delay = HashMap::new();
 
         // Check if this first line matches
         if let Some(config) = self.match_message(line_buffer) {
@@ -197,11 +197,10 @@ impl LogMonitor {
                     announcement,
                     timer_delay_in_seconds,
                 } => {
-                    timed_delay.push((
+                    timed_delay.insert(
                         pattern.clone(),
-                        announcement.clone(),
-                        *timer_delay_in_seconds,
-                    ));
+                        (announcement.clone(), *timer_delay_in_seconds),
+                    );
                 }
             }
         }
@@ -229,11 +228,10 @@ impl LogMonitor {
                                 announcement,
                                 timer_delay_in_seconds,
                             } => {
-                                timed_delay.push((
+                                timed_delay.insert(
                                     pattern.clone(),
-                                    announcement.clone(),
-                                    *timer_delay_in_seconds,
-                                ));
+                                    (announcement.clone(), *timer_delay_in_seconds),
+                                );
                             }
                         }
                     }
@@ -571,8 +569,7 @@ mod tests {
         assert_eq!(batch.immediate.len(), 0);
         assert_eq!(batch.timed_delay.len(), 1);
 
-        let (pattern, announcement, delay) = &batch.timed_delay[0];
-        assert_eq!(pattern, "Charm spell has taken hold");
+        let (announcement, delay) = batch.timed_delay.get("Charm spell has taken hold").unwrap();
         assert_eq!(announcement, "charm about to break");
         assert_eq!(*delay, 30);
     }
@@ -616,8 +613,7 @@ mod tests {
 
         // Should have 1 timed_delay
         assert_eq!(batch.timed_delay.len(), 1);
-        let (pattern, announcement, delay) = &batch.timed_delay[0];
-        assert_eq!(pattern, "Charm spell has taken hold");
+        let (announcement, delay) = batch.timed_delay.get("Charm spell has taken hold").unwrap();
         assert_eq!(announcement, "charm about to break");
         assert_eq!(*delay, 30);
     }
@@ -644,11 +640,15 @@ mod tests {
             .await
             .unwrap();
 
-        // Assert: Should get 3 timed_delay entries (no deduplication at batch level)
-        // Deduplication happens at schedule_timed_delay level via debounce
+        // Assert: Should get 1 timed_delay entry (deduplicated at batch level)
         assert!(result.is_some());
         let batch = result.unwrap();
         assert_eq!(batch.immediate.len(), 0);
-        assert_eq!(batch.timed_delay.len(), 3);
+        assert_eq!(batch.timed_delay.len(), 1);
+
+        // Verify the content
+        let (announcement, delay) = batch.timed_delay.get("Charm spell has taken hold").unwrap();
+        assert_eq!(announcement, "charm about to break");
+        assert_eq!(*delay, 30);
     }
 }
