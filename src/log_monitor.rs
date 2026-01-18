@@ -1,13 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader};
+use tokio::task::JoinHandle;
 
-use crate::Config;
 use crate::audio::TtsEngine;
+use crate::config::{Config, MessageConfig};
 
 // Prefix for log files we're interested in
 const LOG_FILE_PREFIX: &str = "eqlog_";
@@ -49,10 +51,22 @@ fn find_most_recent_log(directory: &Path) -> Result<Option<PathBuf>> {
     Ok(most_recent.map(|(path, _)| path))
 }
 
+/// Result of processing a batch of log lines
+struct BatchResult {
+    /// Immediate announcements to play now (Simple message types)
+    immediate: Vec<String>,
+    /// Timed delay announcements (pattern, announcement, delay_seconds)
+    /// Pattern is used as key for debouncing
+    timed_delay: Vec<(String, String, u64)>,
+}
+
 pub struct LogMonitor {
     game_directory: PathBuf,
-    message_map: HashMap<String, String>,
+    messages: Vec<MessageConfig>,
     tts_engine: TtsEngine,
+    /// Active timers tracked by pattern string
+    /// Key: pattern, Value: JoinHandle for the timer task
+    active_timers: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 impl LogMonitor {
@@ -60,8 +74,9 @@ impl LogMonitor {
     pub fn new(config: Config, tts_engine: TtsEngine) -> Self {
         Self {
             game_directory: PathBuf::from(config.game_directory),
-            message_map: config.message_announcements,
+            messages: config.messages,
             tts_engine,
+            active_timers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -100,15 +115,21 @@ impl LogMonitor {
 
             loop {
                 match self.process_one_batch(&mut reader, &mut line_buffer).await? {
-                    Some(unique_announcements) => {
-                        // Spawn announcement tasks for all unique messages in this batch
-                        for announcement in unique_announcements {
+                    Some(batch_result) => {
+                        // Spawn announcement tasks for immediate messages
+                        for announcement in batch_result.immediate {
                             let engine = self.tts_engine.clone();
                             tokio::spawn(async move {
                                 if let Err(e) = engine.announce(&announcement).await {
                                     eprintln!("Failed to announce message: {}", e);
                                 }
                             });
+                        }
+
+                        // Schedule timed delay announcements
+                        for (pattern, announcement, delay_seconds) in batch_result.timed_delay {
+                            // Use pattern as key for debouncing
+                            self.schedule_timed_delay(pattern, announcement, delay_seconds);
                         }
                     }
                     None => {
@@ -132,13 +153,13 @@ impl LogMonitor {
     ///
     /// Returns:
     /// - `Ok(None)` if EOF is reached immediately (caller should sleep and retry)
-    /// - `Ok(Some(HashSet))` if data was read (empty if no matches found)
+    /// - `Ok(Some(BatchResult))` if data was read (categorized by message type)
     /// - `Err` on read errors
     async fn process_one_batch<R>(
         &self,
         reader: &mut R,
         line_buffer: &mut String,
-    ) -> Result<Option<HashSet<String>>>
+    ) -> Result<Option<BatchResult>>
     where
         R: AsyncBufReadExt + Unpin,
     {
@@ -156,16 +177,33 @@ impl LogMonitor {
         }
 
         // We got at least one line - start batch collection
-        let mut unique_announcements = HashSet::new();
+        // Use HashSet for deduplication of immediate announcements
+        let mut immediate_set = HashSet::new();
+        let mut timed_delay = Vec::new();
 
         // Check if this first line matches
-        if let Some(announcement) = self.match_message(line_buffer) {
+        if let Some(config) = self.match_message(line_buffer) {
             println!(
                 "Match found! Log: '{}' -> Announcing: '{}'",
                 line_buffer.trim(),
-                announcement
+                config.announcement()
             );
-            unique_announcements.insert(announcement.to_string());
+            match config {
+                MessageConfig::Simple { announcement, .. } => {
+                    immediate_set.insert(announcement.clone());
+                }
+                MessageConfig::TimedDelay {
+                    pattern,
+                    announcement,
+                    timer_delay_in_seconds,
+                } => {
+                    timed_delay.push((
+                        pattern.clone(),
+                        announcement.clone(),
+                        *timer_delay_in_seconds,
+                    ));
+                }
+            }
         }
 
         // Try to read more lines with timeout to batch collect immediately available data
@@ -176,13 +214,28 @@ impl LogMonitor {
             match tokio::time::timeout(BATCH_READ_TIMEOUT, reader.read_line(line_buffer)).await {
                 Ok(Ok(bytes)) if bytes > 0 => {
                     // Got another line - check for match
-                    if let Some(announcement) = self.match_message(line_buffer) {
+                    if let Some(config) = self.match_message(line_buffer) {
                         println!(
                             "Match found! Log: '{}' -> Announcing: '{}'",
                             line_buffer.trim(),
-                            announcement
+                            config.announcement()
                         );
-                        unique_announcements.insert(announcement.to_string());
+                        match config {
+                            MessageConfig::Simple { announcement, .. } => {
+                                immediate_set.insert(announcement.clone());
+                            }
+                            MessageConfig::TimedDelay {
+                                pattern,
+                                announcement,
+                                timer_delay_in_seconds,
+                            } => {
+                                timed_delay.push((
+                                    pattern.clone(),
+                                    announcement.clone(),
+                                    *timer_delay_in_seconds,
+                                ));
+                            }
+                        }
                     }
                 }
                 Ok(Ok(_)) => {
@@ -200,15 +253,57 @@ impl LogMonitor {
             }
         }
 
-        Ok(Some(unique_announcements))
+        Ok(Some(BatchResult {
+            immediate: immediate_set.into_iter().collect(),
+            timed_delay,
+        }))
+    }
+
+    /// Schedules a timed delay announcement
+    /// If a timer already exists for this pattern, it will be cancelled and replaced (debounce behavior)
+    fn schedule_timed_delay(&self, pattern: String, announcement: String, delay_seconds: u64) {
+        let timers = Arc::clone(&self.active_timers);
+        let engine = self.tts_engine.clone();
+
+        // Cancel existing timer for this pattern if present
+        {
+            let mut timers_map = timers.lock().unwrap();
+            if let Some(old_handle) = timers_map.remove(&pattern) {
+                old_handle.abort();
+                println!("Cancelled existing timer for pattern: '{}'", pattern);
+            }
+        }
+
+        // Clone for logging before moving into async block
+        let pattern_clone = pattern.clone();
+        let announcement_clone = announcement.clone();
+
+        // Start new timer
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(delay_seconds)).await;
+            if let Err(e) = engine.announce(&announcement).await {
+                eprintln!("Failed to announce timed message: {}", e);
+            }
+        });
+
+        // Store the new timer handle
+        {
+            let mut timers_map = timers.lock().unwrap();
+            timers_map.insert(pattern, handle);
+        }
+
+        println!(
+            "Scheduled timer: '{}' -> '{}' ({}s)",
+            pattern_clone, announcement_clone, delay_seconds
+        );
     }
 
     /// Checks if a log line matches any configured message
-    /// Returns the announcement text if a match is found
-    fn match_message(&self, line: &str) -> Option<&str> {
-        for (log_message, announcement) in &self.message_map {
-            if line.contains(log_message) {
-                return Some(announcement);
+    /// Returns the MessageConfig if a match is found
+    fn match_message(&self, line: &str) -> Option<&MessageConfig> {
+        for message_config in &self.messages {
+            if line.contains(message_config.pattern()) {
+                return Some(message_config);
             }
         }
         None
@@ -218,30 +313,29 @@ impl LogMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use tokio::io::BufReader;
 
-    // Helper function to create a test LogMonitor with custom message mappings
-    fn create_test_monitor(message_map: HashMap<String, String>) -> LogMonitor {
+    // Helper function to create a test LogMonitor with custom message configs
+    fn create_test_monitor(messages: Vec<MessageConfig>) -> LogMonitor {
         LogMonitor {
             game_directory: PathBuf::from("/test/game"),
-            message_map,
+            messages,
             // Create a mock TtsEngine - it won't be used in process_one_batch tests
             // but is required for struct construction
             tts_engine: TtsEngine::new_mock().expect("Failed to create mock TTS engine"),
+            active_timers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     #[tokio::test]
     async fn test_deduplicates_identical_messages() {
         // Setup: 5 identical charm messages
-        let mut message_map = HashMap::new();
-        message_map.insert(
-            "charm spell has worn off".to_string(),
-            "charm break".to_string(),
-        );
+        let messages = vec![MessageConfig::Simple {
+            pattern: "charm spell has worn off".to_string(),
+            announcement: "charm break".to_string(),
+        }];
 
-        let monitor = create_test_monitor(message_map);
+        let monitor = create_test_monitor(messages);
 
         let log_data = "Your charm spell has worn off.\n".repeat(5);
         let mut reader = BufReader::new(log_data.as_bytes());
@@ -253,24 +347,29 @@ mod tests {
             .await
             .unwrap();
 
-        // Assert: Should get Some(HashSet) with only 1 unique announcement
+        // Assert: Should get Some(BatchResult) with only 1 unique immediate announcement
         assert!(result.is_some());
-        let announcements = result.unwrap();
-        assert_eq!(announcements.len(), 1);
-        assert!(announcements.contains("charm break"));
+        let batch = result.unwrap();
+        assert_eq!(batch.immediate.len(), 1);
+        assert!(batch.immediate.contains(&"charm break".to_string()));
+        assert_eq!(batch.timed_delay.len(), 0);
     }
 
     #[tokio::test]
     async fn test_preserves_different_message_types() {
         // Setup: Mix of charm and root messages
-        let mut message_map = HashMap::new();
-        message_map.insert(
-            "charm spell has worn off".to_string(),
-            "charm break".to_string(),
-        );
-        message_map.insert("Root spell has worn off".to_string(), "root break".to_string());
+        let messages = vec![
+            MessageConfig::Simple {
+                pattern: "charm spell has worn off".to_string(),
+                announcement: "charm break".to_string(),
+            },
+            MessageConfig::Simple {
+                pattern: "Root spell has worn off".to_string(),
+                announcement: "root break".to_string(),
+            },
+        ];
 
-        let monitor = create_test_monitor(message_map);
+        let monitor = create_test_monitor(messages);
 
         let log_data = "Your charm spell has worn off.\n\
                        Your Root spell has worn off.\n\
@@ -287,22 +386,22 @@ mod tests {
 
         // Assert: Should get 2 unique announcements (charm + root)
         assert!(result.is_some());
-        let announcements = result.unwrap();
-        assert_eq!(announcements.len(), 2);
-        assert!(announcements.contains("charm break"));
-        assert!(announcements.contains("root break"));
+        let batch = result.unwrap();
+        assert_eq!(batch.immediate.len(), 2);
+        assert!(batch.immediate.contains(&"charm break".to_string()));
+        assert!(batch.immediate.contains(&"root break".to_string()));
+        assert_eq!(batch.timed_delay.len(), 0);
     }
 
     #[tokio::test]
     async fn test_single_line_announcement() {
         // Setup: Single matching line
-        let mut message_map = HashMap::new();
-        message_map.insert(
-            "charm spell has worn off".to_string(),
-            "charm break".to_string(),
-        );
+        let messages = vec![MessageConfig::Simple {
+            pattern: "charm spell has worn off".to_string(),
+            announcement: "charm break".to_string(),
+        }];
 
-        let monitor = create_test_monitor(message_map);
+        let monitor = create_test_monitor(messages);
 
         let log_data = "Your charm spell has worn off.\n";
         let mut reader = BufReader::new(log_data.as_bytes());
@@ -316,21 +415,21 @@ mod tests {
 
         // Assert
         assert!(result.is_some());
-        let announcements = result.unwrap();
-        assert_eq!(announcements.len(), 1);
-        assert!(announcements.contains("charm break"));
+        let batch = result.unwrap();
+        assert_eq!(batch.immediate.len(), 1);
+        assert!(batch.immediate.contains(&"charm break".to_string()));
+        assert_eq!(batch.timed_delay.len(), 0);
     }
 
     #[tokio::test]
     async fn test_no_matching_lines() {
         // Setup
-        let mut message_map = HashMap::new();
-        message_map.insert(
-            "charm spell has worn off".to_string(),
-            "charm break".to_string(),
-        );
+        let messages = vec![MessageConfig::Simple {
+            pattern: "charm spell has worn off".to_string(),
+            announcement: "charm break".to_string(),
+        }];
 
-        let monitor = create_test_monitor(message_map);
+        let monitor = create_test_monitor(messages);
 
         let log_data = "Some random log message.\n\
                        Another unrelated message.\n";
@@ -343,22 +442,22 @@ mod tests {
             .await
             .unwrap();
 
-        // Assert: Should get Some(empty HashSet)
+        // Assert: Should get Some(empty BatchResult)
         assert!(result.is_some());
-        let announcements = result.unwrap();
-        assert_eq!(announcements.len(), 0);
+        let batch = result.unwrap();
+        assert_eq!(batch.immediate.len(), 0);
+        assert_eq!(batch.timed_delay.len(), 0);
     }
 
     #[tokio::test]
     async fn test_eof_immediately() {
         // Setup: Empty data (immediate EOF)
-        let mut message_map = HashMap::new();
-        message_map.insert(
-            "charm spell has worn off".to_string(),
-            "charm break".to_string(),
-        );
+        let messages = vec![MessageConfig::Simple {
+            pattern: "charm spell has worn off".to_string(),
+            announcement: "charm break".to_string(),
+        }];
 
-        let monitor = create_test_monitor(message_map);
+        let monitor = create_test_monitor(messages);
 
         let log_data = "";
         let mut reader = BufReader::new(log_data.as_bytes());
@@ -377,14 +476,18 @@ mod tests {
     #[tokio::test]
     async fn test_mixed_matches_and_non_matches() {
         // Setup
-        let mut message_map = HashMap::new();
-        message_map.insert(
-            "charm spell has worn off".to_string(),
-            "charm break".to_string(),
-        );
-        message_map.insert("snare".to_string(), "snare faded".to_string());
+        let messages = vec![
+            MessageConfig::Simple {
+                pattern: "charm spell has worn off".to_string(),
+                announcement: "charm break".to_string(),
+            },
+            MessageConfig::Simple {
+                pattern: "snare".to_string(),
+                announcement: "snare faded".to_string(),
+            },
+        ];
 
-        let monitor = create_test_monitor(message_map);
+        let monitor = create_test_monitor(messages);
 
         let log_data = "Your charm spell has worn off.\n\
                        Random unrelated message.\n\
@@ -403,28 +506,27 @@ mod tests {
 
         // Assert: Should get 2 unique announcements despite 3 charm lines
         assert!(result.is_some());
-        let announcements = result.unwrap();
-        assert_eq!(announcements.len(), 2);
-        assert!(announcements.contains("charm break"));
-        assert!(announcements.contains("snare faded"));
+        let batch = result.unwrap();
+        assert_eq!(batch.immediate.len(), 2);
+        assert!(batch.immediate.contains(&"charm break".to_string()));
+        assert!(batch.immediate.contains(&"snare faded".to_string()));
+        assert_eq!(batch.timed_delay.len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_match_message() {
+    #[test]
+    fn test_match_message() {
         // Test the match_message helper
-        let mut message_map = HashMap::new();
-        message_map.insert(
-            "charm spell has worn off".to_string(),
-            "charm break".to_string(),
-        );
+        let messages = vec![MessageConfig::Simple {
+            pattern: "charm spell has worn off".to_string(),
+            announcement: "charm break".to_string(),
+        }];
 
-        let monitor = create_test_monitor(message_map);
+        let monitor = create_test_monitor(messages);
 
         // Should match
-        assert_eq!(
-            monitor.match_message("Your charm spell has worn off."),
-            Some("charm break")
-        );
+        let result = monitor.match_message("Your charm spell has worn off.");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().announcement(), "charm break");
 
         // Should not match
         assert_eq!(monitor.match_message("Some other message"), None);
@@ -440,5 +542,113 @@ mod tests {
         assert!(result.is_none());
 
         std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn test_timed_delay_message_batching() {
+        // Setup: TimedDelay message config
+        let messages = vec![MessageConfig::TimedDelay {
+            pattern: "Charm spell has taken hold".to_string(),
+            announcement: "charm about to break".to_string(),
+            timer_delay_in_seconds: 30,
+        }];
+
+        let monitor = create_test_monitor(messages);
+
+        let log_data = "Your Charm spell has taken hold.\n";
+        let mut reader = BufReader::new(log_data.as_bytes());
+        let mut line_buffer = String::new();
+
+        // Act
+        let result = monitor
+            .process_one_batch(&mut reader, &mut line_buffer)
+            .await
+            .unwrap();
+
+        // Assert: Should get TimedDelay in batch result
+        assert!(result.is_some());
+        let batch = result.unwrap();
+        assert_eq!(batch.immediate.len(), 0);
+        assert_eq!(batch.timed_delay.len(), 1);
+
+        let (pattern, announcement, delay) = &batch.timed_delay[0];
+        assert_eq!(pattern, "Charm spell has taken hold");
+        assert_eq!(announcement, "charm about to break");
+        assert_eq!(*delay, 30);
+    }
+
+    #[tokio::test]
+    async fn test_mixed_simple_and_timed_delay() {
+        // Setup: Mix of Simple and TimedDelay messages
+        let messages = vec![
+            MessageConfig::Simple {
+                pattern: "charm spell has worn off".to_string(),
+                announcement: "charm break".to_string(),
+            },
+            MessageConfig::TimedDelay {
+                pattern: "Charm spell has taken hold".to_string(),
+                announcement: "charm about to break".to_string(),
+                timer_delay_in_seconds: 30,
+            },
+        ];
+
+        let monitor = create_test_monitor(messages);
+
+        let log_data = "Your charm spell has worn off.\n\
+                       Your Charm spell has taken hold.\n\
+                       Your charm spell has worn off.\n";
+        let mut reader = BufReader::new(log_data.as_bytes());
+        let mut line_buffer = String::new();
+
+        // Act
+        let result = monitor
+            .process_one_batch(&mut reader, &mut line_buffer)
+            .await
+            .unwrap();
+
+        // Assert: Should get both immediate and timed_delay
+        assert!(result.is_some());
+        let batch = result.unwrap();
+
+        // Should have 1 unique immediate (deduplicated charm break)
+        assert_eq!(batch.immediate.len(), 1);
+        assert!(batch.immediate.contains(&"charm break".to_string()));
+
+        // Should have 1 timed_delay
+        assert_eq!(batch.timed_delay.len(), 1);
+        let (pattern, announcement, delay) = &batch.timed_delay[0];
+        assert_eq!(pattern, "Charm spell has taken hold");
+        assert_eq!(announcement, "charm about to break");
+        assert_eq!(*delay, 30);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_timed_delay_same_pattern() {
+        // Setup: TimedDelay message
+        let messages = vec![MessageConfig::TimedDelay {
+            pattern: "Charm spell has taken hold".to_string(),
+            announcement: "charm about to break".to_string(),
+            timer_delay_in_seconds: 30,
+        }];
+
+        let monitor = create_test_monitor(messages);
+
+        // Multiple instances of the same timed delay message
+        let log_data = "Your Charm spell has taken hold.\n".repeat(3);
+        let mut reader = BufReader::new(log_data.as_bytes());
+        let mut line_buffer = String::new();
+
+        // Act
+        let result = monitor
+            .process_one_batch(&mut reader, &mut line_buffer)
+            .await
+            .unwrap();
+
+        // Assert: Should get 3 timed_delay entries (no deduplication at batch level)
+        // Deduplication happens at schedule_timed_delay level via debounce
+        assert!(result.is_some());
+        let batch = result.unwrap();
+        assert_eq!(batch.immediate.len(), 0);
+        assert_eq!(batch.timed_delay.len(), 3);
     }
 }

@@ -36,9 +36,13 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
    - `audio_semaphore`: `Arc<Semaphore>` limits concurrent playback (not synthesis)
    - `announce()`: Async method that synthesizes and plays TTS with pipelined operations
 
-5. **Message Mapping**: Configuration system via `config.json`
-   - Format: `{"<log message>": "<spoken message>"}`
-   - Async loading with `load_message_config()` function (ready to use)
+5. **Configuration Module** (`src/config.rs`): Type-safe configuration system
+   - `MessageConfig` enum with two variants:
+     - `Simple`: Immediate announcements when pattern matches
+     - `TimedDelay`: Delayed announcements with configurable timer
+   - `Config` struct with `game_directory` and `messages` Vec
+   - `Config::load()` async method for JSON deserialization
+   - Serde-based type-tagged JSON format
 
 6. **Log Monitor (LogMonitor)**: Monitors EverQuest log files and triggers announcements
    - Tails log file using async `BufReader` with line-by-line reading
@@ -46,13 +50,16 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
    - Uses `HashSet<String>` to ensure only one announcement per unique message type per batch
    - Batching timeout: 10ms (catches immediately available lines without delaying single-line announcements)
    - Idle retry delay: 50ms (when EOF is reached)
+   - **Timer Management**: Tracks active timers with `Arc<Mutex<HashMap<String, JoinHandle<()>>>>` for timed delay announcements
+   - **Debounce Behavior**: Re-triggering the same pattern resets the timer (cancels existing, starts new)
 
 ### Current Implementation State
 
 **Code Organization:**
 - `src/audio.rs`: Audio synthesis and playback module (TtsEngine, constants)
-- `src/log_monitor.rs`: Log file monitoring with batching and deduplication (LogMonitor)
-- `src/main.rs`: Application entry point, config loading, initialization
+- `src/config.rs`: Configuration types and loading (Config, MessageConfig enum)
+- `src/log_monitor.rs`: Log file monitoring with batching, deduplication, and timer management (LogMonitor)
+- `src/main.rs`: Application entry point, initialization
 
 **Implemented features:**
 - ✅ Async TTS engine with Tokio runtime
@@ -60,10 +67,12 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
 - ✅ Pipelined synthesis (next announcement can synthesize while current one plays)
 - ✅ Thread-safe synthesizer access via mutex
 - ✅ Proper error handling with `anyhow::Result` and context
-- ✅ Modular code structure with separate audio and log monitoring modules
-- ✅ Config loading and log monitoring (fully integrated)
+- ✅ Modular code structure with separate audio, config, and log monitoring modules
+- ✅ Type-safe configuration with Simple and TimedDelay message types
+- ✅ Timed delay announcements with configurable delays (e.g., "charm about to break" 28s after "Charm spell has taken hold")
+- ✅ Timer debounce behavior (re-triggering resets timer)
 - ✅ Batch deduplication of announcements (prevents duplicate announcements in rapid succession)
-- ✅ Comprehensive unit tests with generic AsyncBufRead pattern covering batch processing, deduplication, and audio engine
+- ✅ Comprehensive unit tests with generic AsyncBufRead pattern covering batch processing, deduplication, timers, and audio engine
 
 ## Development Commands
 
@@ -107,13 +116,14 @@ See `Cargo.toml` for current versions. Core dependencies:
 ```
 quarm_announce/
 ├── src/
-│   ├── main.rs          # Application entry point, config loading, initialization
-│   ├── log_monitor.rs   # Log file monitoring with batching and deduplication
+│   ├── main.rs          # Application entry point, initialization
+│   ├── config.rs        # Configuration types (Config, MessageConfig enum) and loading
+│   ├── log_monitor.rs   # Log file monitoring with batching, deduplication, and timers
 │   └── audio.rs         # Audio synthesis and playback (TtsEngine, constants)
 ├── speakers/            # Piper ONNX models and configs
 │   └── en_US-amy-medium.onnx.json
 ├── Cargo.toml          # Dependencies and metadata
-└── config.json         # Message mappings (log patterns -> announcements)
+└── config.json         # Message configurations (Simple and TimedDelay types)
 ```
 
 ## Implementation Notes
@@ -141,6 +151,36 @@ Synthesis is serialized (mutex), playback is gated (semaphore, limit=1). Key opt
 
 The log monitor uses intelligent batching to prevent announcement spam when multiple identical messages appear rapidly (common in EverQuest when buffs/debuffs expire simultaneously). It collects lines in a 10ms window and uses a `HashSet<String>` to spawn ONE task per unique message. For example: 5 "charm spell has worn off" lines → 1 announcement, but 5 charm + 1 root → 2 distinct announcements. See `log_monitor.rs` for timeout constants.
 
+### Configuration Format
+
+The `config.json` file uses a type-tagged format with two message types:
+
+**Simple Messages** - Immediate announcements:
+```json
+{
+  "type": "simple",
+  "pattern": "charm spell has worn off",
+  "announcement": "charm break"
+}
+```
+
+**TimedDelay Messages** - Delayed announcements with debounce:
+```json
+{
+  "type": "timed_delay",
+  "pattern": "Charm spell has taken hold",
+  "announcement": "charm about to break",
+  "timer_delay_in_seconds": 28
+}
+```
+
+### Timer Behavior
+
+- **Debounce**: If the same pattern is detected again before the timer fires, the existing timer is cancelled and a new one starts
+- **Example**: "Charm spell has taken hold" detected at T+0s and T+20s → only one announcement at T+48s (28s after the second trigger)
+- **Implementation**: Timers tracked in `Arc<Mutex<HashMap<String, JoinHandle<()>>>>` keyed by pattern
+- **Use case**: Warn player before charm breaks (EQ charm lasts ~30s, announce at 28s to give time to react)
+
 ## Testing
 
 The project has comprehensive unit tests for both audio and log monitoring components.
@@ -161,6 +201,8 @@ The project has comprehensive unit tests for both audio and log monitoring compo
 
 **Log Monitor Tests** (`src/log_monitor.rs`):
 - Deduplication, batch processing, pattern matching, EOF handling
+- TimedDelay message batching and collection
+- Mixed Simple and TimedDelay message handling
 
 **Audio Engine Tests** (`src/audio.rs`):
 - Engine initialization, concurrent announcements, semaphore behavior, text handling

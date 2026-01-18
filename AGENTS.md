@@ -12,6 +12,8 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+When creating new tickets, use the `--description` flag to fill in details. Be as prescriptive + descriptive as possible so that a less powerful agent can implement it successfully.
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.

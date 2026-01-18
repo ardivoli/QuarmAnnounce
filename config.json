@@ -1,8 +1,26 @@
 {
   "game_directory": "/path/to/EverQuest",
-  "message_announcements": {
-    "charm spell has worn off": "charm break",
-    "Root spell has worn off": "root break",
-    "Fetter spell has worn off": "fetter break"
-  }
+  "messages": [
+    {
+      "type": "simple",
+      "pattern": "charm spell has worn off",
+      "announcement": "charm break"
+    },
+    {
+      "type": "simple",
+      "pattern": "Root spell has worn off",
+      "announcement": "root break"
+    },
+    {
+      "type": "simple",
+      "pattern": "Fetter spell has worn off",
+      "announcement": "fetter break"
+    },
+    {
+      "type": "timed_delay",
+      "pattern": "Charm spell has taken hold",
+      "announcement": "charm about to break",
+      "timer_delay_in_seconds": 28
+    }
+  ]
 }
