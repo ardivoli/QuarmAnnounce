@@ -1,6 +1,8 @@
 # lefthook.yml
 # Manages hooks for both Git LFS and Beads
 
+colors: false # beads does something weird with color code outputs
+
 pre-commit:
   commands:
     beads:
