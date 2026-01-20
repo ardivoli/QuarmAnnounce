@@ -1,0 +1,21 @@
+[package]
+name = "quarm-tauri-app"
+version.workspace = true
+edition.workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+tauri = { workspace = true, features = ["devtools"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+quarm-config.workspace = true
+quarm-audio.workspace = true
+quarm-monitor.workspace = true
+
+[[bin]]
+name = "quarm-tauri-app"
+path = "src/main.rs"

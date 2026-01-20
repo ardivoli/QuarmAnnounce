@@ -1,14 +1,38 @@
-[package]
-name = "quarm_announce"
-version = "0.1.9"
+[workspace]
+resolver = "2"
+members = [
+    "packages/config",
+    "packages/audio",
+    "packages/monitor",
+    "packages/tauri-app",
+]
+
+[workspace.package]
+version = "0.2.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.49", default-features = false, features = ["macros", "rt-multi-thread", "sync", "fs", "io-util", "time"] }
+
+# Serialization
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false }
+
+# Error handling
+anyhow = "1.0"
+
+# TTS and audio
 piper-rs = "0.1.9"
 ort = { version = "=2.0.0-rc.9" }
 ort-sys = { version = "=2.0.0-rc.9", default-features = false }
 rodio = { version = "0.21.1", default-features = false, features = ["playback"] }
-tokio = { version = "1.49", default-features = false, features = ["macros", "rt-multi-thread", "sync", "fs", "io-util", "time"] }
-serde = { version = "1.0", default-features = false, features = ["derive"] }
-serde_json = { version = "1.0", default-features = false }
-anyhow = "1.0"
+
+# Tauri
+tauri = { version = "2.0", features = [] }
+tauri-build = { version = "2.0" }
+
+# Internal workspace crates
+quarm-config = { path = "packages/config" }
+quarm-audio = { path = "packages/audio" }
+quarm-monitor = { path = "packages/monitor" }
