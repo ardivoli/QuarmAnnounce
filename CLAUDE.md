@@ -8,43 +8,51 @@ Read AGENTS.md for VERY IMPORTANT instructions around task planning, tracking, a
 
 ## Project Overview
 
-Quarm Announce is a Rust application that monitors EverQuest log files for configured messages and announces them via text-to-speech (TTS). When a matching message is detected in the log file, the application speaks a corresponding audio announcement using the Piper TTS engine.
+Quarm Announce is a Tauri + React desktop application that monitors EverQuest log files for configured messages and announces them via text-to-speech (TTS). The application uses a Rust backend for log monitoring and audio synthesis, with a React frontend for configuration and control. When a matching message is detected in the log file, the application speaks a corresponding audio announcement using the Piper TTS engine.
 
 Example: When "Charm spell has worn off" appears in the log, the app speaks "charm wore off".
+
+**Architecture**: Cargo + pnpm monorepo with Tauri 2.x for desktop integration.
 
 ## Architecture
 
 ### Core Components
 
-1. **Async Runtime (Tokio)**: Provides async/await infrastructure
+1. **Tauri Backend**: Desktop application framework with IPC layer
+   - Manages application state (config, TTS engine, monitor handle)
+   - Provides IPC commands: load_config, save_config, init_tts, test_announcement, start/stop_monitoring
+   - Integrates Rust backend with React frontend
+   - State synchronized across UI and backend
+
+2. **Async Runtime (Tokio)**: Provides async/await infrastructure
    - Enables non-blocking I/O and concurrent task execution
    - Spawns blocking tasks for CPU-bound and synchronous operations
 
-2. **TTS Engine (Piper)**: Uses `piper-rs` with ONNX models for neural text-to-speech
-   - Model config: `./speakers/en_US-amy-medium.onnx.json`
+3. **TTS Engine (Piper)**: Uses `piper-rs` with ONNX models for neural text-to-speech
+   - Model config: `./resources/speakers/en_US-amy-medium.onnx.json`
    - Speaker ID: 4 (hardcoded)
    - Output: 22050 Hz mono audio
    - **Thread Safety**: Wrapped in `Arc<Mutex>` because espeak-ng (used internally) is not thread-safe
    - Synthesis operations are serialized via mutex lock
 
-3. **Audio Playback (Rodio)**: Handles audio output through system default stream
+4. **Audio Playback (Rodio)**: Handles audio output through system default stream
    - Runs in `spawn_blocking` to avoid blocking async runtime
    - Only 1 concurrent playback allowed (controlled by semaphore)
 
-4. **TtsEngine Struct**: Coordinates synthesis and playback
+5. **TtsEngine Struct**: Coordinates synthesis and playback
    - `synthesizer`: `Arc<Mutex<PiperSpeechSynthesizer>>` for thread-safe sharing
    - `audio_semaphore`: `Arc<Semaphore>` limits concurrent playback (not synthesis)
    - `announce()`: Async method that synthesizes and plays TTS with pipelined operations
 
-5. **Configuration Module** (`src/config.rs`): Type-safe configuration system
+6. **Configuration Module** (`quarm-config` crate): Type-safe configuration system
    - `MessageConfig` enum with two variants:
      - `Simple`: Immediate announcements when pattern matches
      - `TimedDelay`: Delayed announcements with configurable timer
    - `Config` struct with `game_directory` and `messages` Vec
-   - `Config::load()` async method for JSON deserialization
+   - `Config::load()` and `Config::save()` async methods for JSON serialization
    - Serde-based type-tagged JSON format
 
-6. **Log Monitor (LogMonitor)**: Monitors EverQuest log files and triggers announcements
+7. **Log Monitor (LogMonitor)**: Monitors EverQuest log files and triggers announcements
    - Tails log file using async `BufReader` with line-by-line reading
    - Implements batch collection with timeout to deduplicate rapid announcements
    - Uses `HashSet<String>` to ensure only one announcement per unique message type per batch
@@ -55,54 +63,94 @@ Example: When "Charm spell has worn off" appears in the log, the app speaks "cha
 
 ### Current Implementation State
 
-**Code Organization:**
-- `src/audio.rs`: Audio synthesis and playback module (TtsEngine, constants)
-- `src/config.rs`: Configuration types and loading (Config, MessageConfig enum)
-- `src/log_monitor.rs`: Log file monitoring with batching, deduplication, and timer management (LogMonitor)
-- `src/main.rs`: Application entry point, initialization
+**Code Organization (Cargo + pnpm Monorepo):**
+- `packages/config/`: Configuration types crate (`quarm-config`)
+  - MessageConfig enum (Simple, TimedDelay)
+  - Config struct with load() and save() methods
+- `packages/audio/`: Audio synthesis and playback crate (`quarm-audio`)
+  - TtsEngine with synthesis, playback, and caching
+  - Test support feature for dependent crates
+- `packages/monitor/`: Log monitoring crate (`quarm-monitor`)
+  - LogMonitor with batching, deduplication, and timer management
+- `packages/tauri-app/`: Tauri desktop application (Rust backend)
+  - AppState: manages config, TTS engine, monitor handle
+  - IPC commands: load_config, save_config, init_tts, test_announcement, start/stop_monitoring
+  - Main entry point with Tauri builder
+- `packages/ui/`: React frontend (TypeScript + Vite)
+  - Configuration display
+  - Start/stop monitoring controls
+  - Test announcement buttons
+- `resources/`: Shared resources
+  - `speakers/`: Piper TTS models
+  - `default-config.json`: Configuration template
 
 **Implemented features:**
+- ✅ Tauri 2.x desktop application with React frontend
+- ✅ IPC layer for frontend-backend communication
+- ✅ Configuration management UI (load/save config)
+- ✅ Start/stop monitoring controls with status display
+- ✅ Test announcement buttons for each message pattern
 - ✅ Async TTS engine with Tokio runtime
 - ✅ Non-blocking audio synthesis and playback
 - ✅ Pipelined synthesis (next announcement can synthesize while current one plays)
 - ✅ Thread-safe synthesizer access via mutex
 - ✅ Proper error handling with `anyhow::Result` and context
-- ✅ Modular code structure with separate audio, config, and log monitoring modules
+- ✅ Modular workspace structure with separate crates (config, audio, monitor, tauri-app)
 - ✅ Type-safe configuration with Simple and TimedDelay message types
 - ✅ Timed delay announcements with configurable delays (e.g., "charm about to break" 28s after "Charm spell has taken hold")
 - ✅ Timer debounce behavior (re-triggering resets timer)
 - ✅ Batch deduplication of announcements (prevents duplicate announcements in rapid succession)
-- ✅ Comprehensive unit tests with generic AsyncBufRead pattern covering batch processing, deduplication, timers, and audio engine
+- ✅ Comprehensive unit tests (23 tests) with generic AsyncBufRead pattern covering batch processing, deduplication, timers, and audio engine
 
 ## Development Commands
 
+### Rust Backend (Workspace)
+
 ```bash
-# Build the project
+# Build all workspace crates
 cargo build
 
-# Run the application
-cargo run
+# Build with release optimizations
+cargo build --release
 
-# Check for compilation errors without building
+# Check for compilation errors
 cargo check
 
-# Run with release optimizations
-cargo build --release
-cargo run --release
-
-# Run tests
+# Run all tests (23 tests across workspace)
 cargo test
 
-# Run tests with output
-cargo test -- --nocapture
+# Run tests for specific crate
+cargo test -p quarm-audio
+cargo test -p quarm-monitor
 
-# Run specific test
-cargo test test_deduplicates_identical_messages
+# Run with output to see println! statements
+cargo test -- --nocapture
+```
+
+### Tauri Application
+
+```bash
+# Install frontend dependencies
+pnpm install
+
+# Run in development mode (with hot reload)
+pnpm tauri:dev
+
+# Build production app (creates installer)
+pnpm tauri:build
+
+# Run frontend only (without Tauri)
+pnpm dev
+
+# Build frontend only
+pnpm build
 ```
 
 ## Key Dependencies
 
-See `Cargo.toml` for current versions. Core dependencies:
+See root `Cargo.toml` and `packages/*/Cargo.toml` for current versions.
+
+### Rust Dependencies
 
 - `tokio`: Async runtime with full features
 - `piper-rs`: Neural TTS synthesis
@@ -110,20 +158,53 @@ See `Cargo.toml` for current versions. Core dependencies:
 - `rodio`: Audio playback
 - `anyhow`: Error handling with context
 - `serde` / `serde_json`: JSON config parsing
+- `tauri`: Desktop application framework
+
+### Frontend Dependencies
+
+- `@tauri-apps/api`: Tauri IPC client library
+- `react` / `react-dom`: UI framework
+- `vite`: Build tool and dev server
+- `typescript`: Type-safe JavaScript
 
 ## Project Structure
 
 ```
-quarm_announce/
-├── src/
-│   ├── main.rs          # Application entry point, initialization
-│   ├── config.rs        # Configuration types (Config, MessageConfig enum) and loading
-│   ├── log_monitor.rs   # Log file monitoring with batching, deduplication, and timers
-│   └── audio.rs         # Audio synthesis and playback (TtsEngine, constants)
-├── speakers/            # Piper ONNX models and configs
-│   └── en_US-amy-medium.onnx.json
-├── Cargo.toml          # Dependencies and metadata
-└── config.json         # Message configurations (Simple and TimedDelay types)
+QuarmAnnounce/  (Cargo + pnpm monorepo)
+├── Cargo.toml                    # Workspace root with shared dependencies
+├── package.json                  # pnpm workspace root
+├── pnpm-workspace.yaml
+├── packages/
+│   ├── config/                   # Rust: Configuration types (quarm-config)
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs            # Config, MessageConfig enum, load/save
+│   ├── audio/                    # Rust: TTS engine (quarm-audio)
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs            # TtsEngine, synthesis, playback, caching
+│   ├── monitor/                  # Rust: Log monitoring (quarm-monitor)
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs            # LogMonitor with batching and timers
+│   ├── tauri-app/                # Rust: Tauri backend
+│   │   ├── Cargo.toml
+│   │   ├── tauri.conf.json       # Tauri configuration
+│   │   ├── build.rs
+│   │   └── src/
+│   │       ├── main.rs           # Tauri entry point
+│   │       ├── commands.rs       # IPC handlers
+│   │       └── state.rs          # AppState management
+│   └── ui/                       # React frontend (TypeScript + Vite)
+│       ├── package.json
+│       ├── vite.config.ts
+│       ├── tsconfig.json
+│       ├── index.html
+│       └── src/
+│           ├── main.tsx          # React entry point
+│           └── App.tsx           # Main UI component
+├── resources/
+│   ├── speakers/                 # Piper ONNX models
+│   │   └── en_US-amy-medium.onnx.json
+│   └── default-config.json       # Configuration template
+└── config.json                   # User configuration (gitignored in deployment)
 ```
 
 ## Implementation Notes
@@ -199,28 +280,35 @@ The project has comprehensive unit tests for both audio and log monitoring compo
 
 ### Test Coverage
 
-**Log Monitor Tests** (`src/log_monitor.rs`):
+**Config Tests** (`packages/config/src/lib.rs`):
+- MessageConfig pattern/announcement accessors
+- Config default implementation
+
+**Audio Engine Tests** (`packages/audio/src/lib.rs`):
+- Engine initialization, concurrent announcements, semaphore behavior, text handling
+- Precaching functionality
+
+**Log Monitor Tests** (`packages/monitor/src/lib.rs`):
 - Deduplication, batch processing, pattern matching, EOF handling
 - TimedDelay message batching and collection
 - Mixed Simple and TimedDelay message handling
 
-**Audio Engine Tests** (`src/audio.rs`):
-- Engine initialization, concurrent announcements, semaphore behavior, text handling
-
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all workspace tests (23 tests total)
 cargo test
 
-# Run log monitor tests only
-cargo test log_monitor
+# Run tests for specific crate
+cargo test -p quarm-config
+cargo test -p quarm-audio
+cargo test -p quarm-monitor
 
-# Run audio tests only
-cargo test audio
+# Run specific test
+cargo test test_deduplicates_identical_messages
 
 # Run with output to see println! statements
 cargo test -- --nocapture
 ```
 
-**Note:** Tests require the Piper TTS model file to exist at `./speakers/en_US-amy-medium.onnx.json` for TtsEngine initialization tests and mock creation.
+**Note:** Tests require the Piper TTS model file to exist at `./resources/speakers/en_US-amy-medium.onnx.json` for TtsEngine initialization tests and mock creation.

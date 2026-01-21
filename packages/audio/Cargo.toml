@@ -1,0 +1,15 @@
+[package]
+name = "quarm-audio"
+version.workspace = true
+edition.workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+tokio.workspace = true
+piper-rs.workspace = true
+ort.workspace = true
+ort-sys.workspace = true
+rodio.workspace = true
+anyhow.workspace = true

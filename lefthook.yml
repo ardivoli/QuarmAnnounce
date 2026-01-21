@@ -1,10 +1,20 @@
 # lefthook.yml
 # Manages hooks for both Git LFS and Beads
 
+colors: false # beads does something weird with color code outputs
+
 pre-commit:
   commands:
     beads:
       run: bd hooks run pre-commit
+    lint:
+      root: packages/ui
+      glob: "*.{ts,tsx}"
+      run: pnpm eslint {staged_files}
+    format:
+      root: packages/ui
+      glob: "*.{ts,tsx}"
+      run: pnpm prettier --check {staged_files}
 
 prepare-commit-msg:
   commands:

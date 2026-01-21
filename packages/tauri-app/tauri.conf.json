@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "Quarm Announce",
+  "identifier": "com.quarm.announce",
+  "version": "0.2.0",
+  "build": {
+    "beforeBuildCommand": "pnpm --filter @quarm/ui build",
+    "beforeDevCommand": "pnpm --filter @quarm/ui dev",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../ui/dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "deb"],
+    "resources": ["../../resources/**/*"],
+    "icon": []
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Quarm Announce",
+        "width": 800,
+        "height": 600,
+        "resizable": true
+      }
+    ]
+  }
+}

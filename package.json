@@ -1,0 +1,19 @@
+{
+  "name": "quarm-announce",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @quarm/ui dev",
+    "build": "pnpm --filter @quarm/ui build",
+    "lint": "pnpm --filter @quarm/ui lint",
+    "lint:fix": "pnpm --filter @quarm/ui lint:fix",
+    "format": "pnpm --filter @quarm/ui format",
+    "format:check": "pnpm --filter @quarm/ui format:check",
+    "setup:dev": "mkdir -p target/debug/test-logs && mkdir -p target/debug/resources && cp resources/default-config.json target/debug/config.json && cp -r resources/speakers target/debug/resources/",
+    "tauri:dev": "pnpm run setup:dev && tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
