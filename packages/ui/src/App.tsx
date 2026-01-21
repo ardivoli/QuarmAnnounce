@@ -1,98 +1,101 @@
-import { useState, useEffect } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { resolveResource } from '@tauri-apps/api/path'
+import { useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { resolveResource } from '@tauri-apps/api/path';
 
 interface MessageConfig {
-  type: 'simple' | 'timed_delay'
-  pattern: string
-  announcement: string
-  timer_delay_in_seconds?: number
+  type: 'simple' | 'timed_delay';
+  pattern: string;
+  announcement: string;
+  timer_delay_in_seconds?: number;
 }
 
 interface Config {
-  game_directory: string
-  messages: MessageConfig[]
+  game_directory: string;
+  messages: MessageConfig[];
 }
 
 function App() {
-  const [config, setConfig] = useState<Config | null>(null)
-  const [isMonitoring, setIsMonitoring] = useState(false)
-  const [status, setStatus] = useState('Idle')
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    loadConfig()
-  }, [])
+  const [config, setConfig] = useState<Config | null>(null);
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [status, setStatus] = useState('Idle');
+  const [error, setError] = useState<string | null>(null);
 
   const loadConfig = async () => {
     try {
-      setStatus('Loading configuration...')
-      setError(null)
+      setStatus('Loading configuration...');
+      setError(null);
       // Let backend resolve config path relative to executable
-      const cfg = await invoke<Config>('load_config')
-      setConfig(cfg)
-      setStatus('Configuration loaded')
+      const cfg = await invoke<Config>('load_config');
+      setConfig(cfg);
+      setStatus('Configuration loaded');
     } catch (e) {
-      const errorMsg = `Failed to load config: ${e}`
-      setError(errorMsg)
-      setStatus('Error')
-      console.error(errorMsg)
+      const errorMsg = `Failed to load config: ${e}`;
+      setError(errorMsg);
+      setStatus('Error');
+      console.error(errorMsg);
     }
-  }
+  };
 
   const toggleMonitoring = async () => {
     try {
       if (!isMonitoring) {
-        setStatus('Initializing TTS...')
-        setError(null)
+        setStatus('Initializing TTS...');
+        setError(null);
 
         // Resolve model path from bundled resources
-        const modelPath = await resolveResource('resources/speakers/en_US-amy-medium.onnx.json')
+        const modelPath = await resolveResource('resources/speakers/en_US-amy-medium.onnx.json');
 
         // Initialize TTS engine with resolved path
         await invoke('init_tts', {
           modelPath,
-        })
+        });
 
         // Start monitoring
-        setStatus('Starting monitoring...')
-        await invoke('start_monitoring')
-        setIsMonitoring(true)
-        setStatus('Monitoring active')
+        setStatus('Starting monitoring...');
+        await invoke('start_monitoring');
+        setIsMonitoring(true);
+        setStatus('Monitoring active');
       } else {
-        setStatus('Stopping monitoring...')
-        await invoke('stop_monitoring')
-        setIsMonitoring(false)
-        setStatus('Monitoring stopped')
+        setStatus('Stopping monitoring...');
+        await invoke('stop_monitoring');
+        setIsMonitoring(false);
+        setStatus('Monitoring stopped');
       }
     } catch (e) {
-      const errorMsg = `Failed to ${isMonitoring ? 'stop' : 'start'} monitoring: ${e}`
-      setError(errorMsg)
-      setStatus('Error')
-      console.error(errorMsg)
+      const errorMsg = `Failed to ${isMonitoring ? 'stop' : 'start'} monitoring: ${e}`;
+      setError(errorMsg);
+      setStatus('Error');
+      console.error(errorMsg);
     }
-  }
+  };
 
   const testAnnouncement = async (text: string) => {
     try {
-      setError(null)
-      setStatus(`Testing announcement: "${text}"...`)
-      await invoke('test_announcement', { text })
-      setStatus('Test complete')
+      setError(null);
+      setStatus(`Testing announcement: "${text}"...`);
+      await invoke('test_announcement', { text });
+      setStatus('Test complete');
     } catch (e) {
-      const errorMsg = `Failed to test announcement: ${e}`
-      setError(errorMsg)
-      setStatus('Error')
-      console.error(errorMsg)
+      const errorMsg = `Failed to test announcement: ${e}`;
+      setError(errorMsg);
+      setStatus('Error');
+      console.error(errorMsg);
     }
-  }
+  };
 
   return (
     <div style={{ padding: '20px', fontFamily: 'system-ui, sans-serif' }}>
       <h1>Quarm Announce</h1>
 
       {/* Status Section */}
-      <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+      <div
+        style={{
+          marginBottom: '20px',
+          padding: '10px',
+          backgroundColor: '#f0f0f0',
+          borderRadius: '4px',
+        }}
+      >
         <strong>Status:</strong> {status}
         {error && <div style={{ color: 'red', marginTop: '5px' }}>{error}</div>}
       </div>
@@ -189,7 +192,7 @@ function App() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

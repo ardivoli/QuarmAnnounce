@@ -7,6 +7,14 @@ pre-commit:
   commands:
     beads:
       run: bd hooks run pre-commit
+    lint:
+      root: packages/ui
+      glob: "*.{ts,tsx}"
+      run: pnpm eslint {staged_files}
+    format:
+      root: packages/ui
+      glob: "*.{ts,tsx}"
+      run: pnpm prettier --check {staged_files}
 
 prepare-commit-msg:
   commands:
