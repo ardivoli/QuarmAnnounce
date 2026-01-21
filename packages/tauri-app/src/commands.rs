@@ -9,8 +9,18 @@ use crate::state::AppState;
 
 /// Load configuration from a JSON file
 #[tauri::command]
-pub async fn load_config(path: String, state: State<'_, AppState>) -> Result<Config, String> {
-    let config = Config::load(&path)
+pub async fn load_config(state: State<'_, AppState>) -> Result<Config, String> {
+    // Get directory containing the executable
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+    let exe_dir = exe_path
+        .parent()
+        .ok_or_else(|| "Failed to get executable directory".to_string())?;
+    let config_path = exe_dir.join("config.json");
+
+    println!("Loading config from: {:?}", config_path);
+
+    let config = Config::load(config_path.to_string_lossy().as_ref())
         .await
         .map_err(|e| format!("Failed to load config: {}", e))?;
 
@@ -22,13 +32,17 @@ pub async fn load_config(path: String, state: State<'_, AppState>) -> Result<Con
 
 /// Save configuration to a JSON file
 #[tauri::command]
-pub async fn save_config(
-    path: String,
-    config: Config,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn save_config(config: Config, state: State<'_, AppState>) -> Result<(), String> {
+    // Get directory containing the executable
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+    let exe_dir = exe_path
+        .parent()
+        .ok_or_else(|| "Failed to get executable directory".to_string())?;
+    let config_path = exe_dir.join("config.json");
+
     config
-        .save(&path)
+        .save(config_path.to_string_lossy().as_ref())
         .await
         .map_err(|e| format!("Failed to save config: {}", e))?;
 

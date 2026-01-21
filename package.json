@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "pnpm --filter @quarm/ui dev",
     "build": "pnpm --filter @quarm/ui build",
-    "tauri:dev": "tauri dev",
+    "setup:dev": "mkdir -p target/debug/test-logs && mkdir -p target/debug/resources && cp resources/default-config.json target/debug/config.json && cp -r resources/speakers target/debug/resources/",
+    "tauri:dev": "pnpm run setup:dev && tauri dev",
     "tauri:build": "tauri build"
   },
   "devDependencies": {

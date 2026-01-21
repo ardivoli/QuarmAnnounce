@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { resolveResource } from '@tauri-apps/api/path'
 
 interface MessageConfig {
   type: 'simple' | 'timed_delay'
@@ -27,9 +28,8 @@ function App() {
     try {
       setStatus('Loading configuration...')
       setError(null)
-      const cfg = await invoke<Config>('load_config', {
-        path: './config.json',
-      })
+      // Let backend resolve config path relative to executable
+      const cfg = await invoke<Config>('load_config')
       setConfig(cfg)
       setStatus('Configuration loaded')
     } catch (e) {
@@ -46,9 +46,12 @@ function App() {
         setStatus('Initializing TTS...')
         setError(null)
 
-        // Initialize TTS engine
+        // Resolve model path from bundled resources
+        const modelPath = await resolveResource('resources/speakers/en_US-amy-medium.onnx.json')
+
+        // Initialize TTS engine with resolved path
         await invoke('init_tts', {
-          modelPath: './resources/speakers/en_US-amy-medium.onnx.json',
+          modelPath,
         })
 
         // Start monitoring

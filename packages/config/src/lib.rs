@@ -40,7 +40,7 @@ impl MessageConfig {
 }
 
 /// Application configuration
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Default, Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
     pub game_directory: String,
     pub messages: Vec<MessageConfig>,
@@ -69,15 +69,6 @@ impl Config {
             .context(format!("Failed to write config file: {}", path))?;
 
         Ok(())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            game_directory: String::new(),
-            messages: Vec::new(),
-        }
     }
 }
 

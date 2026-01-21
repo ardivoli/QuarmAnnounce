@@ -299,12 +299,7 @@ impl LogMonitor {
     /// Checks if a log line matches any configured message
     /// Returns the MessageConfig if a match is found
     fn match_message(&self, line: &str) -> Option<&MessageConfig> {
-        for message_config in &self.messages {
-            if line.contains(message_config.pattern()) {
-                return Some(message_config);
-            }
-        }
-        None
+        self.messages.iter().find(|&message_config| line.contains(message_config.pattern())).map(|v| v as _)
     }
 }
 
