@@ -13,7 +13,10 @@
     "active": true,
     "targets": ["msi", "deb"],
     "resources": ["../../resources/**/*"],
-    "icon": []
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
   },
   "app": {
     "windows": [
