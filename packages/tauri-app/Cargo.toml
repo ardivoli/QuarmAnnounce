@@ -1,5 +1,5 @@
 [package]
-name = "quarm-tauri-app"
+name = "quarm_announce"
 version.workspace = true
 edition.workspace = true
 
@@ -17,5 +17,5 @@ quarm-audio.workspace = true
 quarm-monitor.workspace = true
 
 [[bin]]
-name = "quarm-tauri-app"
+name = "quarm_announce"
 path = "src/main.rs"
