@@ -96,11 +96,24 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
       - name: Run unit tests
         run: cargo test --verbose
 
-      - name: Build release binary
-        run: cargo build --release --verbose
+      - name: Build Tauri application
+        run: pnpm tauri:build --verbose
 
       - name: Verify binary exists
         shell: bash
@@ -204,11 +217,24 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
       - name: Run unit tests
         run: cargo test --verbose
 
-      - name: Build release binary
-        run: cargo build --release --verbose
+      - name: Build Tauri application
+        run: pnpm tauri:build --verbose
 
       - name: Verify binary exists
         run: |
