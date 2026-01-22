@@ -62,13 +62,13 @@ jobs:
         shell: bash
         run: |
           # Check if ONNX model exists
-          if [ ! -f speakers/en_US-amy-medium.onnx ]; then
-            echo "::error::ONNX model file not found at speakers/en_US-amy-medium.onnx"
+          if [ ! -f resources/speakers/en_US-amy-medium.onnx ]; then
+            echo "::error::ONNX model file not found at resources/speakers/en_US-amy-medium.onnx"
             exit 1
           fi
 
           # Get file size (cross-platform: use PowerShell on Windows via bash)
-          SIZE=$(powershell -Command "(Get-Item speakers/en_US-amy-medium.onnx).Length")
+          SIZE=$(powershell -Command "(Get-Item resources/speakers/en_US-amy-medium.onnx).Length")
           echo "ONNX model size: $SIZE bytes"
 
           # Verify file is at least 60MB (not an LFS pointer)
@@ -81,8 +81,8 @@ jobs:
           echo "✓ LFS files verified: ONNX model is $SIZE bytes"
 
           # Also verify JSON config exists
-          if [ ! -f speakers/en_US-amy-medium.onnx.json ]; then
-            echo "::error::ONNX model config not found at speakers/en_US-amy-medium.onnx.json"
+          if [ ! -f resources/speakers/en_US-amy-medium.onnx.json ]; then
+            echo "::error::ONNX model config not found at resources/speakers/en_US-amy-medium.onnx.json"
             exit 1
           fi
 
@@ -162,13 +162,13 @@ jobs:
       - name: Verify Git LFS files
         run: |
           # Check if ONNX model exists
-          if [ ! -f speakers/en_US-amy-medium.onnx ]; then
-            echo "::error::ONNX model file not found at speakers/en_US-amy-medium.onnx"
+          if [ ! -f resources/speakers/en_US-amy-medium.onnx ]; then
+            echo "::error::ONNX model file not found at resources/speakers/en_US-amy-medium.onnx"
             exit 1
           fi
 
           # Get file size using stat
-          SIZE=$(stat -c%s speakers/en_US-amy-medium.onnx)
+          SIZE=$(stat -c%s resources/speakers/en_US-amy-medium.onnx)
           echo "ONNX model size: $SIZE bytes"
 
           # Verify file is at least 60MB (not an LFS pointer)
@@ -181,8 +181,8 @@ jobs:
           echo "✓ LFS files verified: ONNX model is $SIZE bytes"
 
           # Also verify JSON config exists
-          if [ ! -f speakers/en_US-amy-medium.onnx.json ]; then
-            echo "::error::ONNX model config not found at speakers/en_US-amy-medium.onnx.json"
+          if [ ! -f resources/speakers/en_US-amy-medium.onnx.json ]; then
+            echo "::error::ONNX model config not found at resources/speakers/en_US-amy-medium.onnx.json"
             exit 1
           fi
 
