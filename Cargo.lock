@@ -2859,7 +2859,7 @@ dependencies = [
 
 [[package]]
 name = "quarm-audio"
-version = "0.2.1-test"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "ort",
@@ -2871,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "quarm-config"
-version = "0.2.1-test"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -2881,7 +2881,7 @@ dependencies = [
 
 [[package]]
 name = "quarm-monitor"
-version = "0.2.1-test"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "quarm-audio",
@@ -2891,7 +2891,7 @@ dependencies = [
 
 [[package]]
 name = "quarm_announce"
-version = "0.2.1-test"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "quarm-audio",

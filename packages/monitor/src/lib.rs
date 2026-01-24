@@ -181,8 +181,8 @@ impl LogMonitor {
         let mut immediate_set = HashSet::new();
         let mut timed_delay = HashMap::new();
 
-        // Check if this first line matches
-        if let Some(config) = self.match_message(line_buffer) {
+        // Check if this first line matches any configured messages
+        for config in self.match_message(line_buffer) {
             println!(
                 "Match found! Log: '{}' -> Announcing: '{}'",
                 line_buffer.trim(),
@@ -212,8 +212,8 @@ impl LogMonitor {
             // Use timeout to check if more data is immediately available
             match tokio::time::timeout(BATCH_READ_TIMEOUT, reader.read_line(line_buffer)).await {
                 Ok(Ok(bytes)) if bytes > 0 => {
-                    // Got another line - check for match
-                    if let Some(config) = self.match_message(line_buffer) {
+                    // Got another line - check for matches
+                    for config in self.match_message(line_buffer) {
                         println!(
                             "Match found! Log: '{}' -> Announcing: '{}'",
                             line_buffer.trim(),
@@ -296,10 +296,13 @@ impl LogMonitor {
         );
     }
 
-    /// Checks if a log line matches any configured message
-    /// Returns the MessageConfig if a match is found
-    fn match_message(&self, line: &str) -> Option<&MessageConfig> {
-        self.messages.iter().find(|&message_config| line.contains(message_config.pattern())).map(|v| v as _)
+    /// Checks if a log line matches any configured messages
+    /// Returns all matching MessageConfigs (supports same pattern with different types)
+    fn match_message(&self, line: &str) -> Vec<&MessageConfig> {
+        self.messages
+            .iter()
+            .filter(|message_config| line.contains(message_config.pattern()))
+            .collect()
     }
 }
 
@@ -518,11 +521,11 @@ mod tests {
 
         // Should match
         let result = monitor.match_message("Your charm spell has worn off.");
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().announcement(), "charm break");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].announcement(), "charm break");
 
         // Should not match
-        assert_eq!(monitor.match_message("Some other message"), None);
+        assert!(monitor.match_message("Some other message").is_empty());
     }
 
     #[test]
@@ -645,5 +648,52 @@ mod tests {
         let (announcement, delay) = batch.timed_delay.get("Charm spell has taken hold").unwrap();
         assert_eq!(announcement, "charm about to break");
         assert_eq!(*delay, 30);
+    }
+
+    #[tokio::test]
+    async fn test_same_pattern_simple_and_timed_delay() {
+        // Setup: Same pattern with both Simple and TimedDelay types
+        // This is the user's config scenario: immediate "go back in" + delayed "get out"
+        let messages = vec![
+            MessageConfig::Simple {
+                pattern: "flesh begins to liquefy".to_string(),
+                announcement: "go back in".to_string(),
+            },
+            MessageConfig::TimedDelay {
+                pattern: "flesh begins to liquefy".to_string(),
+                announcement: "get out".to_string(),
+                timer_delay_in_seconds: 22,
+            },
+        ];
+
+        let monitor = create_test_monitor(messages);
+
+        // 3 identical log lines matching the same pattern
+        let log_data = "Your flesh begins to liquefy.\n".repeat(3);
+        let mut reader = BufReader::new(log_data.as_bytes());
+        let mut line_buffer = String::new();
+
+        // Act
+        let result = monitor
+            .process_one_batch(&mut reader, &mut line_buffer)
+            .await
+            .unwrap();
+
+        // Assert: Should get both message types, each deduplicated
+        assert!(result.is_some());
+        let batch = result.unwrap();
+
+        // 1 immediate announcement (deduplicated from 3 lines)
+        assert_eq!(batch.immediate.len(), 1);
+        assert!(batch.immediate.contains(&"go back in".to_string()));
+
+        // 1 timed delay entry (deduplicated from 3 lines)
+        assert_eq!(batch.timed_delay.len(), 1);
+        let (announcement, delay) = batch
+            .timed_delay
+            .get("flesh begins to liquefy")
+            .unwrap();
+        assert_eq!(announcement, "get out");
+        assert_eq!(*delay, 22);
     }
 }
