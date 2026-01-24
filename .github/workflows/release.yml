@@ -335,10 +335,10 @@ jobs:
 
       - name: Create Windows staging directory
         run: |
-          mkdir -p staging-windows
+          mkdir -p staging-windows/resources
           cp artifacts/windows/quarm_announce.exe staging-windows/
           cp config.json staging-windows/
-          cp -r resources/speakers staging-windows/
+          cp -r resources/speakers staging-windows/resources/
           cp -r artifacts/windows-espeak-data staging-windows/espeak-ng-data
           echo "Windows staging directory contents:"
           ls -la staging-windows/
@@ -362,11 +362,11 @@ jobs:
 
       - name: Create Linux staging directory
         run: |
-          mkdir -p staging-linux
+          mkdir -p staging-linux/resources
           cp artifacts/linux/quarm_announce staging-linux/
           chmod +x staging-linux/quarm_announce
           cp config.json staging-linux/
-          cp -r resources/speakers staging-linux/
+          cp -r resources/speakers staging-linux/resources/
           cp -r artifacts/linux-espeak-data staging-linux/espeak-ng-data
           echo "Linux staging directory contents:"
           ls -la staging-linux/
