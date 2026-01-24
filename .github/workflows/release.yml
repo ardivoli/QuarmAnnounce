@@ -342,7 +342,7 @@ jobs:
           cp -r artifacts/windows-espeak-data staging-windows/espeak-ng-data
           echo "Windows staging directory contents:"
           ls -la staging-windows/
-          ls -la staging-windows/speakers/
+          ls -la staging-windows/resources/speakers/
           ls -la staging-windows/espeak-ng-data/ | head -10
 
       - name: Create Windows package
@@ -370,7 +370,7 @@ jobs:
           cp -r artifacts/linux-espeak-data staging-linux/espeak-ng-data
           echo "Linux staging directory contents:"
           ls -la staging-linux/
-          ls -la staging-linux/speakers/
+          ls -la staging-linux/resources/speakers/
           ls -la staging-linux/espeak-ng-data/ | head -10
 
       - name: Create Linux package
